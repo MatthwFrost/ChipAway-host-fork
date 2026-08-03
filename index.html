@@ -207,6 +207,39 @@ summary:hover{color:var(--cream-dim)}
 .fb-msg.ok{color:#7FCBB2}
 .fb-msg.err{color:#E0B36A}
 .build-tag{font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E4B47;margin-top:10px}
+
+.ct-wrap{margin-top:11px;padding-top:10px;border-top:1px solid var(--line)}
+.ct-head{font-family:'Fraunces',Georgia,serif;font-size:14px;font-weight:600;color:var(--brass);margin-bottom:6px}
+.ct-list{margin:0;padding-left:16px}
+.ct-list li{font-size:11.5px;line-height:1.55;color:var(--cream-dim);margin-bottom:4px}
+.ct-toggle{width:100%;background:transparent;border-color:#2C443C;font-size:12px;color:var(--cream-dim);margin-top:9px;padding:8px}
+.val-box{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.val-head{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate);margin-bottom:7px}
+.val-tab{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:11px}
+.val-tab th{text-align:left;color:var(--slate);font-weight:400;font-size:9px;letter-spacing:.09em;text-transform:uppercase;padding:0 0 4px}
+.val-tab td{padding:3px 0;border-top:1px solid #1B2A26;color:var(--cream-dim)}
+.val-tab tr.peak td{color:var(--brass);font-weight:700}
+.val-bar{display:inline-block;height:7px;border-radius:2px;background:linear-gradient(90deg,rgba(201,162,39,.4),var(--brass));vertical-align:middle}
+.val-note{font-size:11.5px;color:var(--cream-dim);line-height:1.5;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.val-note b{color:var(--brass)}
+.ev-box{margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
+.ev-line{font-size:12px;line-height:1.55;color:var(--cream-dim);margin-bottom:4px}
+.ev-line b{font-family:'JetBrains Mono',monospace;color:var(--cream)}
+.ev-pos{color:var(--win);font-weight:700}
+.ev-neg{color:#D2705C;font-weight:700}
+.ev-miss{background:#241C0E;border:1px solid #4A3A16;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.5;color:#E0B36A;margin-top:9px}
+.ev-good{background:#132A24;border:1px solid #245045;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.5;color:#7FCBB2;margin-top:9px}
+.leak{background:#241C0E;border:1px solid #4A3A16;border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.5;color:#E0B36A;margin-bottom:11px;display:none}
+.leak.on{display:block}
+.leak b{color:#F0CE8E}
+.spark-wrap{margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+.spark-head{display:flex;justify-content:space-between;align-items:baseline;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate);margin-bottom:6px}
+.spark-head span:last-child{color:var(--cream-dim);letter-spacing:0;text-transform:none;font-size:10px}
+svg.spark{width:100%;height:52px;display:block;overflow:visible}
+.ev-tot{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;line-height:1.1}
+.ev-tot small{font-size:10px;color:var(--slate);font-weight:400;letter-spacing:.06em;text-transform:uppercase;display:block;margin-top:2px}
+.reset-btn{width:100%;margin-top:10px;background:transparent;border-color:#3A2A22;color:#9A8478;font-size:12px;padding:8px}
+.reset-btn:hover{background:#2B1A17;color:#D2705C}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:620px){.table-outer{aspect-ratio:auto;height:560px;padding:10px}.seat{width:100px}.card{width:34px;height:48px}.card .rank{font-size:12px}.card .pip{font-size:14px}}
 </style>
@@ -238,8 +271,12 @@ summary:hover{color:var(--cream-dim)}
           <summary>Session stats &amp; read on you</summary>
           <div class="details-body">
             <div class="stat-grid" id="statGrid"></div>
+            <div id="evTotals"></div>
+            <div class="spark-wrap" id="evChartWrap"></div>
+            <div class="spark-wrap" id="vpipChartWrap"></div>
             <button class="btn-reveal classify" id="btnClassify">Classify my style</button>
             <div class="classify-out" id="classifyOut"></div>
+            <button class="reset-btn" id="btnReset">Reset all saved stats</button>
             <div class="mini-note">Stats cover this session only and reset when you reload.</div>
           </div>
         </details>
@@ -278,6 +315,7 @@ summary:hover{color:var(--cream-dim)}
       <div class="card-box" id="actionBox">
         <div class="box-label">Your action</div>
         <div class="drift" id="drift"></div>
+        <div class="leak" id="leak"></div>
         <div class="status" id="status">Press <b>Deal hand</b> to start.</div>
         <div class="btn-row">
           <button class="btn-fold" id="btnFold" disabled>Fold</button>
@@ -295,6 +333,7 @@ summary:hover{color:var(--cream-dim)}
           <button class="preset" data-frac="max">All in</button>
         </div>
         <button class="btn-deal" id="btnDeal">Deal hand</button>
+        <div id="evReview"></div>
       </div>
 
       <div class="card-box hot" id="guessBox" style="display:none">
@@ -322,7 +361,7 @@ summary:hover{color:var(--cream-dim)}
           <div class="meter-key"><span id="kWin">win —</span><span id="kTie">tie —</span><span id="kLose">lose —</span></div>
           <div class="rangebar" id="rangeBar"></div>
           <div class="odds-note" id="oddsNote"></div>
-          <div id="foldEq"></div>
+          <div id="valueBet"></div>
         </div>
       </div>
 
@@ -330,6 +369,7 @@ summary:hover{color:var(--cream-dim)}
         <div class="box-label">Reads</div>
         <div class="image-line" id="heroImage">Your table image appears once you act.</div>
         <div id="rangeGuessWrap"></div>
+        <div id="counterTips"></div>
       </div>
 
       <details id="setupBox">
@@ -585,6 +625,33 @@ const PROFILES={
             raiseRel:0.95,callBuffer:-0.21,bluffFreq:0.30,sizing:0.80,maxRaises:3,
             sigRaise:0.33,sigCall:0.06,polar:0.85,mixW:0.055,mixR:0.26,note:'relentless, bluff-heavy'}
 };
+const COUNTER={
+  nit:{head:'Against a nit',
+    bullets:['They fold constantly \u2014 bluff them relentlessly, any size works.',
+             'When they finally raise, believe it. Fold everything but the near-nuts.',
+             'Value bet thin only against their calls, never against their raises.',
+             'Steal their blinds every orbit; they will not fight back.']},
+  tag:{head:'Against a TAG',
+    bullets:['The toughest seat. Their range is genuinely strong when they commit.',
+             'Bluff selectively \u2014 they fold enough to bet, but they do fight back.',
+             'Respect big raises; they are rarely bluffing for large sizes.',
+             'Attack their small bets: those are the weak part of their range.']},
+  lag:{head:'Against a LAG',
+    bullets:['They bet wide, so your bluff-catchers go up in value \u2014 call more.',
+             'Let them bluff into you. Check strong hands to induce.',
+             'Re-raise their thin value bets; they open far too many hands.',
+             'Do not try to out-bluff them; they call more than they look like they do.']},
+  station:{head:'Against a calling station',
+    bullets:['Never bluff. Not once. They call any size with any pair.',
+             'Value bet relentlessly and thinly \u2014 they pay off with far worse.',
+             'Bet BIGGER than feels comfortable when you are ahead; they still call.',
+             'When they raise, they have it. That is the one time to fold.']},
+  maniac:{head:'Against a maniac',
+    bullets:['Do not bluff \u2014 they call or re-raise regardless of what you represent.',
+             'Trap: check strong hands and let them barrel into you.',
+             'Widen your calling range; most of their aggression is air.',
+             'Sit tight and wait. Their variance does the work for you.']}
+};
 const HERO_PROF={sigRaise:0.70,sigCall:0.40,polar:0.55,bluffFreq:0.15,callBuffer:0.04};
 const PROFILE_KEYS=['nit','tag','lag','station','maniac'];
 const SEAT_NAMES=['Marguerite','Idris','Sofia','Bernard','Kaz'];
@@ -727,16 +794,32 @@ function showEquity(){
   } else $('rangeBar').innerHTML='';
   const onTable=pot+players.reduce(function(s,p){return s+p.bet;},0);
   const toCall=Math.min(currentBet-hero.bet,hero.stack);
-  if(toCall>0){
-    const needed=100*toCall/(onTable+toCall);
-    const have=eqR.win+eqR.tie/2;
-    const ok=have>=needed;
-    $('oddsNote').innerHTML='Calling <b>'+toCall+'</b> into <b>'+onTable+'</b> needs <b>'+needed.toFixed(1)+'%</b>.<br>Against their ranges you hold <b>'+have.toFixed(1)+'%</b> — <span class="verdict '+(ok?'good':'bad')+'">'+(ok?'call is profitable on raw odds':'folding is the odds-on play')+'</span>.';
+  const spot=snapshotSpot();
+  const ranked=spot.options.slice().sort(function(a,b){return b.ev-a.ev;});
+  const best=ranked[0];
+  let rows='';
+  ranked.forEach(function(o){
+    const cls=o===best?'ev-pos':(o.ev<0?'ev-neg':'');
+    rows+='<tr><td class="'+cls+'">'+o.label+'</td>'+
+      '<td class="'+cls+'">'+(o.ev>=0?'+':'')+o.ev.toFixed(0)+'</td>'+
+      '<td>'+(o.fold!==undefined?(100*o.fold).toFixed(0)+'% fold':'\u2014')+'</td></tr>';
+  });
+  let why;
+  if(best.label==='fold'){
+    why='Every line loses money here. '+(toCall>0?'Calling '+toCall+' needs <b>'+(100*toCall/(onTable+toCall)).toFixed(0)+'%</b> and you have <b>'+(100*eqR.win/100*100).toFixed(0)+'%</b>':'Nothing to win')+'.';
+  } else if(best.fold!==undefined){
+    why='<b>'+best.label+'</b> wins most: they fold <b>'+(100*best.fold).toFixed(0)+'%</b> of the time, and when called you still hold <b>'+(eqR.win+eqR.tie/2).toFixed(0)+'%</b>.';
+  } else if(best.label.indexOf('call')===0){
+    why='Calling is best: you need <b>'+(100*toCall/(onTable+toCall)).toFixed(0)+'%</b> and hold <b>'+(eqR.win+eqR.tie/2).toFixed(0)+'%</b>, but raising folds out too much of what you beat.';
   } else {
-    $('oddsNote').textContent='No bet to call. Measured against '+opps.length+' live opponent'+(opps.length===1?'':'s')+'.';
+    why='Checking is best \u2014 betting folds out hands you are beating.';
   }
-  renderFoldEquity();
+  $('oddsNote').innerHTML='<div class="val-head" style="margin-bottom:6px">Every line, ranked by EV</div>'+
+    '<table class="val-tab"><tr><th>action</th><th>EV</th><th>fold equity</th></tr>'+rows+'</table>'+
+    '<div class="val-note">'+why+'</div>';
+  renderValueBet();
 }
+
 
 /* ============================================================
    9. SIDE POTS
@@ -819,7 +902,7 @@ function startHand(){
   players.forEach(function(p){if(p.stack<=0)p.stack=START_STACK;});
   deck=shuffle(makeDeck());
   board=[];lastBoardCount=-1;pot=0;street=0;currentBet=0;minRaise=BB;
-  handLive=true;revealAll=false;streetRaises=0;lastAggressor=-1;villainIdx=-1;pendingResult=null;lastMultiway=[];rgAskedStreet=-1;
+  handLive=true;revealAll=false;streetRaises=0;lastAggressor=-1;villainIdx=-1;pendingResult=null;lastMultiway=[];rgAskedStreet=-1;handDecisions=[];heroSpot=null;tipsOpen=false;$('evReview').innerHTML='';
   players.forEach(function(p){p.hole=[];p.folded=false;p.allIn=false;p.bet=0;p.committed=0;p.acted=false;p.raises=0;p.badge='';p.badgeCls='';p.rLo=0;p.rBluff=0;p.score=null;});
   hf={vpip:false,pfr:false,raisedPre:false,f3bCounted:false,sawShowdown:false,aggro:0,calls:0};
   hideEquity();$('guessBox').style.display='none';
@@ -876,6 +959,7 @@ function potBefore(){return pot+players.reduce(function(s,p){return s+p.bet;},0)
 function heroFold(){
   const h=players[0];h.folded=true;h.acted=true;
   if(street===0&&hf.raisedPre&&currentBet>h.bet&&!hf.f3bCounted){stats.f3bOpp++;stats.f3b++;hf.f3bCounted=true;}
+  recordDecision('fold');
   setBadge(h,'fold','b-fold');log('<span class="hl">You</span> fold');
   disableHeroControls();hideEquity();
   $('status').innerHTML='You folded — the hand plays on. Everything is revealed at the end.';
@@ -890,6 +974,7 @@ function heroCall(){
   } else if(toCall>0){stats.calls++;hf.calls++;}
   h.stack-=toCall;h.bet+=toCall;h.committed+=toCall;h.acted=true;
   if(h.stack===0)h.allIn=true;
+  recordDecision(toCall===0?'check':'call',toCall);
   if(toCall>0) narrowCall(h); else narrowCheck(h);
   setBadge(h,toCall===0?'check':'call '+toCall,'b-passive');
   log('<span class="hl">You</span> '+(toCall===0?'check':'call '+toCall));
@@ -912,6 +997,7 @@ function heroRaise(){
   if(rs>0)minRaise=Math.max(minRaise,rs);
   currentBet=Math.max(currentBet,h.bet);
   h.acted=true;h.raises++;streetRaises++;lastAggressor=0;
+  recordDecision(street===0||currentBet>BB?'raise':'bet',h.bet);
   narrowAggro(h,put/Math.max(1,pb));
   setBadge(h,(h.allIn?'all in ':'raise to ')+h.bet,'b-aggro');
   players.forEach(function(p){if(p!==h&&!p.folded&&!p.allIn)p.acted=false;});
@@ -1127,7 +1213,11 @@ function concludeHand(guess){
   if(hf.pfr)stats.pfr++;
   if(hf.sawShowdown)stats.wtsd++;
   handLog.push({vpip:hf.vpip,pfr:hf.pfr,aggro:hf.aggro,calls:hf.calls});
+  const handCost=handDecisions.reduce(function(a,d){return a+Math.max(0,d.cost);},0);
+  evRecords.push({cost:handCost,n:handDecisions.length});
+  renderEvReview();renderEvCharts();renderLeak();
   renderStats();renderDrift();$('rangeGuessWrap').innerHTML='';
+  saveSession();
   villainIdx=-1;paint();
   $('btnDeal').disabled=false;$('btnDeal').textContent='Deal next hand';
 }
@@ -1184,20 +1274,35 @@ function classify(){
    ============================================================ */
 function projectedHeroRep(B,P){
   const h=players[0];
-  const sr=clamp(B/Math.max(1,P),0.2,1.6);
+  const sr=clamp(B/Math.max(1,P),0.15,3.0);
   const tighten=HERO_PROF.sigRaise+0.13*(sr-0.62);
-  const pol=clamp(HERO_PROF.polar*(0.55+0.62*sr),0,0.92);
-  return {rLo:Math.max(h.rLo||0,clamp(tighten,0,0.95)),
+  const pol=clamp(HERO_PROF.polar*(0.55+0.62*Math.min(sr,2)),0,0.92);
+  return {rLo:Math.max(h.rLo||0,clamp(tighten,0,0.93)),
           rBluff:Math.max(h.rBluff||0,clamp(pol*HERO_PROF.bluffFreq*2.4,0,0.42))};
 }
-function foldChance(o,betSize,potSize){
+// Probability every opponent folds to a bet of B into P.
+// Price elasticity matters: a bigger bet demands a stronger hand to continue,
+// which is what stops "always shove" from being the answer with a strong hand.
+function foldChancePre(o,betSize){
   const prof=o.isHero?HERO_PROF:PROFILES[o.profile];
-  const rep=projectedHeroRep(betSize,potSize);      // what your bet represents
-  const need=betSize/(potSize+2*betSize);           // equity they need to call
+  const facing=Math.max(BB,currentBet);
+  const ratio=betSize/facing;
+  // negative callBuffer means they call more, so they keep more of their range
+  const keep=clamp(0.62*Math.pow(Math.max(1,ratio),-0.75)-(prof.callBuffer||0)*1.6,0.06,0.95);
+  const lo=o.rLo||0, width=1-lo;
+  if(width<=0) return 0;
+  const contin=Math.min(width,keep*width+0.015);
+  return clamp(1-contin/width,0,0.94);
+}
+function foldChance(o,betSize,potSize){
+  if(street===0) return foldChancePre(o,betSize);
+  const prof=o.isHero?HERO_PROF:PROFILES[o.profile];
+  const rep=projectedHeroRep(betSize,potSize);
+  const need=betSize/(potSize+2*betSize);
   const s=rep.rBluff;
-  // they only have to beat your value hands; your air they beat automatically
   const beatNeed=clamp((need-s)/Math.max(1e-6,1-s),0,1);
-  const t=clamp(rep.rLo+beatNeed*(1-rep.rLo)+(prof.callBuffer||0),0,1);
+  const elastic=clamp(0.15*Math.log(1+betSize/Math.max(1,potSize)),0,0.20);
+  const t=clamp(rep.rLo+beatNeed*(1-rep.rLo)*0.55+elastic+(prof.callBuffer||0),0,0.995);
   const lo=o.rLo||0, bl=o.rBluff||0;
   const below=function(x,a,b){return clamp((x-a)/Math.max(1e-6,b-a),0,1);};
   return (1-bl)*below(t,lo,1)+bl*below(t,0,BLUFF_TOP);
@@ -1208,7 +1313,7 @@ function renderFoldEquity(){
   const el=$('foldEq');
   if(!opps.length||!handLive){el.innerHTML='';return;}
   const P=potBefore();
-  const sizes=[[0.5,'\u00bd pot'],[0.75,'\u00be pot'],[1.0,'pot'],[1.5,'1.5\u00d7 pot']];
+  const sizes=[[0.33,'\u2153 pot'],[0.5,'\u00bd pot'],[0.75,'\u00be pot'],[1.0,'pot'],[1.5,'1.5\u00d7 pot']];
   let rows='';
   sizes.forEach(function(sz){
     const B=Math.round(P*sz[0]);
@@ -1336,6 +1441,334 @@ function renderDrift(){
   el.classList.toggle('on',!!msg);
 }
 
+
+/* ============================================================
+   13f. EV ENGINE — was that decision actually right?
+   Net EV of each option, in chips. Folding is the baseline at 0:
+   money already in the pot is not yours any more.
+     call  : win the pot that was there, or lose what you put in
+     bet   : they fold and you take it, or you play a bigger pot
+   ============================================================ */
+function evOfCall(e,P,C){ return e*P-(1-e)*C; }
+function evOfBet(e,P,B,f){ return f*P+(1-f)*(e*(P+B)-(1-e)*B); }
+
+let handDecisions=[];   // every hero decision this hand
+let evRecords=[];       // one entry per hand, persisted
+
+// Measure against opponents who actually have chips in beyond the blinds.
+// Counting players still to act as if they were all calling understates equity
+// badly - it is the same bug that made the bots fold everything in v3.
+function contestingOpps(){
+  const live=players.filter(function(p){return !p.folded&&!p.isHero;});
+  if(!live.length) return live;
+  if(currentBet<=0) return live;
+  const inFor=live.filter(function(p){return p.bet>=currentBet-0.01||p.allIn;});
+  const toAct=live.filter(function(p){return inFor.indexOf(p)<0;});
+  // Players yet to act will mostly fold, but not all of them. Estimate how many
+  // actually continue, and measure equity against that many. Equity and fold
+  // probability must be computed over the SAME opponents or the two disagree.
+  let expected=0;
+  toAct.forEach(function(o){ expected+=(1-foldChance(o,Math.max(BB,currentBet),potBefore())); });
+  const extra=toAct.slice(0,Math.max(0,Math.round(expected)));
+  const set=inFor.concat(extra);
+  return set.length?set:live.slice(0,1);
+}
+// Acting last is worth real money: you see their action before deciding on every
+// later street. A single-street equity number cannot express that, so we credit it
+// explicitly. ~3.5 points in position, less as the field grows.
+function positionalCredit(){
+  const live=players.filter(function(p){return !p.folded&&!p.isHero;});
+  if(!live.length) return 0;
+  // postflop action order: SB, BB, UTG, MP, CO, BTN. The button (posOf 0) acts LAST.
+  const rank=function(i){const q=posOf(i);return q===0?6:q;};
+  const myRank=rank(0);
+  let last=true;
+  players.forEach(function(p,i){ if(!p.folded&&!p.isHero&&rank(i)>myRank) last=false; });
+  const streetsLeft=Math.max(0,3-street);
+  if(!streetsLeft) return 0;
+  const base=last?0.035:-0.015;
+  return base*(streetsLeft/3)/Math.max(1,live.length*0.55);
+}
+function heroEquityNow(){
+  const opps=contestingOpps();
+  if(!opps.length) return 1;
+  const eq=calcEquity(players[0].hole,opps,520,true);
+  return clamp((eq.win+eq.tie/2)/100+positionalCredit(),0,1);
+}
+function nOppLive(){return players.filter(function(p){return !p.folded&&!p.isHero;}).length;}
+function snapshotSpot(){
+  const h=players[0];
+  const P=potBefore();
+  const C=Math.min(currentBet-h.bet,h.stack);
+  const ref=contestingOpps();
+  const e=heroEquityNow();
+  const opts=[];
+  opts.push({label:'fold',ev:0,amount:0});
+  if(C>0) opts.push({label:'call '+C,ev:evOfCall(e,P,C),amount:C});
+  else opts.push({label:'check',ev:0,amount:0});
+  [[0.33,'\u2153 pot'],[0.5,'\u00bd pot'],[0.75,'\u00be pot'],[1,'pot'],[1.5,'1.5\u00d7 pot']].forEach(function(sz){
+    // A raise must reach at least currentBet + minRaise. Size the pot fraction
+    // off the pot AFTER calling, which is how raise sizing actually works.
+    let target;
+    if(C>0) target=Math.round(currentBet+sz[0]*(P+C));
+    else target=Math.round(P*sz[0]);
+    target=Math.max(target,currentBet+minRaise);
+    target=Math.min(target,h.bet+h.stack);
+    const B=target-h.bet;                       // chips hero actually adds
+    if(B<BB||B>h.stack) return;
+    if(opts.some(function(o){return o.amount===B;})) return;
+    let f=1;
+    ref.forEach(function(o){ f*=foldChance(o,B,P); });
+    const allIn=(B>=h.stack);
+    opts.push({label:allIn?('all in '+target):((C>0?'raise to ':'bet ')+target+' ('+sz[1]+')'),ev:evOfBet(e,P,B,f),amount:B,target:target,fold:f,n:ref.length});
+  });
+  let best=opts[0];
+  opts.forEach(function(o){ if(o.ev>best.ev) best=o; });
+  return {street:street,equity:e,pot:P,toCall:C,options:opts,best:best};
+}
+function recordDecision(kind,amount){
+  if(!heroSpot) return;
+  let opt=null,label=kind;
+  if(kind==='fold'||kind==='check'){
+    opt=heroSpot.options.filter(function(o){return o.label===kind;})[0];
+  } else if(kind==='call'){
+    opt=heroSpot.options.filter(function(o){return o.label.indexOf('call')===0;})[0];
+    label='call '+amount;
+  } else {
+    // match the aggressive option nearest the size actually used
+    const aggro=heroSpot.options.filter(function(o){return o.fold!==undefined;});
+    aggro.forEach(function(o){
+      if(!opt||Math.abs(o.amount-amount)<Math.abs(opt.amount-amount)) opt=o;
+    });
+    // a size larger than any modelled option: price it directly
+    if(opt&&amount>opt.amount*1.35){
+      let f=1;
+      players.forEach(function(o2){ if(!o2.folded&&!o2.isHero) f*=foldChance(o2,amount,heroSpot.pot); });
+      opt={label:kind+' '+amount,ev:evOfBet(heroSpot.equity,heroSpot.pot,amount,f),amount:amount,fold:f};
+      if(opt.ev>heroSpot.best.ev) heroSpot.best=opt;
+    }
+    label=(opt?opt.label:kind+' '+amount);
+  }
+  const evTaken=opt?opt.ev:0;
+  handDecisions.push({street:heroSpot.street,taken:label,evTaken:evTaken,
+    best:heroSpot.best,cost:Math.max(0,heroSpot.best.ev-evTaken),equity:heroSpot.equity,pot:heroSpot.pot});
+  heroSpot=null;
+}
+let heroSpot=null;
+
+function renderEvReview(){
+  const el=$('evReview');
+  if(!handDecisions.length){el.innerHTML='';return;}
+  let worst=handDecisions[0];
+  handDecisions.forEach(function(d){ if(d.cost>worst.cost) worst=d; });
+  const total=handDecisions.reduce(function(a,d){return a+d.cost;},0);
+  let html='<div class="ev-box"><div class="ev-line">Decision review, this hand:</div>';
+  handDecisions.forEach(function(d){
+    const cls=d.cost>1?'ev-neg':'ev-pos';
+    html+='<div class="ev-line">'+STREETS[d.street]+' \u2014 you <b>'+d.taken+'</b>'+
+      ' ('+(d.evTaken>=0?'+':'')+d.evTaken.toFixed(0)+')'+
+      (d.cost>1?' \u00b7 best was <b>'+d.best.label+'</b> (+'+d.best.ev.toFixed(0)+')':' \u00b7 <span class="ev-pos">best available</span>')+
+      '</div>';
+  });
+  if(total>1&&worst.cost>1){
+    const b=worst.best;
+    html+='<div class="ev-miss"><b>Biggest miss:</b> on the '+STREETS[worst.street].toLowerCase()+
+      ' you had <b>'+(100*worst.equity).toFixed(0)+'%</b> equity into a pot of <b>'+worst.pot+'</b>. '+
+      (b.fold!==undefined
+        ? 'A '+b.label+' would have folded them <b>'+(100*b.fold).toFixed(0)+'%</b> of the time, worth about <b>+'+b.ev.toFixed(0)+'</b> chips against your <b>'+(worst.evTaken>=0?'+':'')+worst.evTaken.toFixed(0)+'</b>.'
+        : 'The better line was to '+b.label+', worth about <b>+'+b.ev.toFixed(0)+'</b>.')+
+      '</div>';
+  } else {
+    html+='<div class="ev-good">Every decision this hand was the highest-EV option available. Result aside, you played it right.</div>';
+  }
+  el.innerHTML=html+'</div>';
+}
+
+/* ============================================================
+   13g. SESSION CHARTS — skill line vs luck line
+   ============================================================ */
+function sparkline(series,colour,zeroLine){
+  if(series.length<2) return '<div class="mini-note">Needs a few more hands.</div>';
+  const W=260,H=52;
+  const mn=Math.min.apply(null,series),mx=Math.max.apply(null,series);
+  const span=(mx-mn)||1;
+  const x=function(i){return (i/(series.length-1))*W;};
+  const y=function(v){return H-((v-mn)/span)*(H-6)-3;};
+  let d='';
+  series.forEach(function(v,i){ d+=(i?'L':'M')+x(i).toFixed(1)+','+y(v).toFixed(1); });
+  let zl='';
+  if(zeroLine&&mn<0&&mx>0) zl='<line x1="0" y1="'+y(0).toFixed(1)+'" x2="'+W+'" y2="'+y(0).toFixed(1)+'" stroke="#33443D" stroke-width="1" stroke-dasharray="3 3"/>';
+  const last=series[series.length-1];
+  return '<svg class="spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+zl+
+    '<path d="'+d+'" fill="none" stroke="'+colour+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+
+    '<circle cx="'+x(series.length-1).toFixed(1)+'" cy="'+y(last).toFixed(1)+'" r="2.6" fill="'+colour+'"/></svg>';
+}
+function renderEvCharts(){
+  if(!evRecords.length){$('evTotals').innerHTML='';$('evChartWrap').innerHTML='';$('vpipChartWrap').innerHTML='';return;}
+  let run=0; const evSeries=evRecords.map(function(r){run+=r.cost;return -run;});
+  const totalCost=run;
+  const cls=totalCost<=1?'ev-pos':'ev-neg';
+  $('evTotals').innerHTML='<div class="ev-tot '+cls+'">'+(totalCost<=1?'':'\u2212')+Math.abs(totalCost).toFixed(0)+
+    '<small>chips lost to non-optimal decisions</small></div>';
+  $('evChartWrap').innerHTML='<div class="spark-head"><span>Decision quality</span><span>'+
+    (totalCost<=1?'holding steady':'\u2212'+totalCost.toFixed(0)+' cumulative')+'</span></div>'+
+    sparkline(evSeries,totalCost<=1?'#2E9E7B':'#D2705C',true)+
+    '<div class="mini-note">Falling means EV is leaking. Flat means you are taking the best line available.</div>';
+  const win=12;
+  if(handLog.length>=win){
+    const vp=[];
+    for(let i=win;i<=handLog.length;i++){
+      const w=handLog.slice(i-win,i);
+      vp.push(100*w.filter(function(h){return h.vpip;}).length/w.length);
+    }
+    const cur=vp[vp.length-1];
+    $('vpipChartWrap').innerHTML='<div class="spark-head"><span>How wide you are playing</span><span>'+cur.toFixed(0)+'% last '+win+'</span></div>'+
+      sparkline(vp,'#C9A227',false)+
+      '<div class="mini-note">Your VPIP over a rolling '+win+'-hand window. Watch for drift across a session.</div>';
+  } else {
+    $('vpipChartWrap').innerHTML='<div class="spark-head"><span>How wide you are playing</span><span>'+(win-handLog.length)+' more hands</span></div>';
+  }
+}
+
+/* ============================================================
+   13h. LEAK OF THE SESSION — surface one thing, not twenty
+   ============================================================ */
+function findLeak(){
+  if(stats.hands<12) return '';
+  const m=heroMetrics();
+  const cand=[];
+  if(stats.f3bOpp>=4&&m.f3b!==null&&m.f3b>75)
+    cand.push({w:3,t:'You fold to 3-bets <b>'+m.f3b.toFixed(0)+'%</b> of the time. Above about 70% and observant players can 3-bet you relentlessly with anything.'});
+  if(m.af<0.6&&stats.calls>=8)
+    cand.push({w:4,t:'Aggression factor <b>'+m.af.toFixed(2)+'</b> \u2014 you are calling far more than betting. Calling only wins when you have the best hand; betting can win either way.'});
+  if(m.vpip>55&&stats.hands>=15)
+    cand.push({w:3,t:'You are playing <b>'+m.vpip.toFixed(0)+'%</b> of hands. Even the loosest winning regulars sit near 35% at 6-max.'});
+  if(m.vpip<14&&stats.hands>=20)
+    cand.push({w:2,t:'You are playing just <b>'+m.vpip.toFixed(0)+'%</b> of hands. Folding this much means the blinds grind you down \u2014 look for steals in late position.'});
+  if(m.vpip>0&&(m.vpip-m.pfr)>28&&stats.hands>=15)
+    cand.push({w:3,t:'You enter <b>'+m.vpip.toFixed(0)+'%</b> of pots but raise only <b>'+m.pfr.toFixed(0)+'%</b>. That gap is limping and calling \u2014 it plays big pots out of position with weak ranges.'});
+  if(stats.guessTotal>=8&&m.read!==null&&m.read<35)
+    cand.push({w:2,t:'Your hand reads are landing <b>'+m.read.toFixed(0)+'%</b> of the time. Reveal the equity panel more often after acting, and check what their betting actually represented.'});
+  if(evRecords.length>=10){
+    const avg=evRecords.reduce(function(a,r){return a+r.cost;},0)/evRecords.length;
+    if(avg>12) cand.push({w:5,t:'You are leaking about <b>'+avg.toFixed(0)+'</b> chips of EV per hand. The decision review under each hand shows exactly where \u2014 most of it is usually one street.'});
+  }
+  if(!cand.length) return '';
+  cand.sort(function(a,b){return b.w-a.w;});
+  return cand[0].t;
+}
+function renderLeak(){
+  const el=$('leak'),msg=findLeak();
+  el.innerHTML=msg?('<b>Worth fixing:</b> '+msg):'';
+  el.classList.toggle('on',!!msg);
+}
+
+/* ============================================================
+   13i. PERSISTENCE
+   ============================================================ */
+const SAVE_KEY='chipaway.session.v1';
+function saveSession(){
+  try{
+    localStorage.setItem(SAVE_KEY,JSON.stringify({stats:stats,handLog:handLog,evRecords:evRecords,handNo:handNo}));
+  }catch(e){}
+}
+function loadSession(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw) return;
+    const d=JSON.parse(raw);
+    if(d.stats) for(const k in d.stats) stats[k]=d.stats[k];
+    if(d.handLog) d.handLog.forEach(function(h){handLog.push(h);});
+    if(d.evRecords) evRecords=d.evRecords;
+    if(d.handNo) handNo=d.handNo;
+  }catch(e){}
+}
+function resetSession(){
+  try{localStorage.removeItem(SAVE_KEY);}catch(e){}
+  location.reload();
+}
+
+
+/* ============================================================
+   13j. VALUE EXTRACTION — how much can this hand actually win?
+   With equity e, betting B into P yields
+       EV = f*P + (1-f)[e(P+B) - (1-e)B]
+   The part that varies with size is the "called" branch, so the
+   question is not "how big can I bet" but "which size maximises
+   (money they put in) x (chance they put it in)".
+   ============================================================ */
+function valueCurve(){
+  const hero=players[0];
+  const opps=players.filter(function(p){return !p.folded&&!p.isHero;});
+  if(!opps.length) return null;
+  const eq=calcEquity(hero.hole,opps,700,true);
+  const e=(eq.win+eq.tie/2)/100;
+  const P=potBefore();
+  const rows=[];
+  [[0.25,'\u00bc pot'],[0.33,'\u2153 pot'],[0.5,'\u00bd pot'],[0.75,'\u00be pot'],[1,'pot'],[1.5,'1.5\u00d7 pot']].forEach(function(sz){
+    const B=Math.round(P*sz[0]);
+    if(B<BB||B>hero.stack) return;
+    let f=1;
+    opps.forEach(function(o){ f*=foldChance(o,B,P); });
+    const called=(1-f)*(e*(P+B)-(1-e)*B);   // what the called branch is worth
+    const ev=f*P+(1-f)*(e*(P+B)-(1-e)*B);
+    rows.push({label:sz[1],B:B,f:f,called:called,ev:ev,extra:(1-f)*B*e});
+  });
+  if(!rows.length) return null;
+  let peak=rows[0];
+  rows.forEach(function(r){ if(r.ev>peak.ev) peak=r; });
+  return {e:e,P:P,rows:rows,peak:peak};
+}
+function renderValueBet(){
+  const el=$('valueBet');
+  const hero=players[0];
+  if(!handLive||hero.folded||!board.length){el.innerHTML='';return;}
+  const v=valueCurve();
+  if(!v||v.e<0.55){el.innerHTML='';return;}   // only meaningful when you are ahead
+  const mx=Math.max.apply(null,v.rows.map(function(r){return r.ev;}));
+  let rows='';
+  v.rows.forEach(function(r){
+    const w=Math.max(2,Math.round(46*r.ev/Math.max(1,mx)));
+    rows+='<tr'+(r===v.peak?' class="peak"':'')+'><td>'+r.label+'</td><td>'+r.B+'</td>'+
+      '<td>'+(100*(1-r.f)).toFixed(0)+'%</td><td>'+r.ev.toFixed(0)+'</td>'+
+      '<td><span class="val-bar" style="width:'+w+'px"></span></td></tr>';
+  });
+  const pk=v.peak;
+  let note;
+  if(pk.f>0.6){
+    note='They fold to <b>'+pk.label+'</b> about '+(100*pk.f).toFixed(0)+'% of the time. You are strong enough that folding them out costs you money \u2014 a smaller bet keeps them in.';
+  } else {
+    note='<b>'+pk.label+'</b> ('+pk.B+') extracts most. They continue <b>'+(100*(1-pk.f)).toFixed(0)+'%</b> of the time, so you get paid without pricing them out.';
+  }
+  el.innerHTML='<div class="val-box"><div class="val-head">Getting paid \u2014 you have '+(100*v.e).toFixed(0)+'% equity</div>'+
+    '<table class="val-tab"><tr><th>size</th><th>bet</th><th>they call</th><th>EV</th><th></th></tr>'+rows+'</table>'+
+    '<div class="val-note">'+note+'</div></div>';
+}
+
+/* ============================================================
+   13k. HOW TO PLAY THIS OPPONENT
+   ============================================================ */
+let tipsOpen=false;
+function renderCounterTips(){
+  const el=$('counterTips');
+  const opps=players.filter(function(p){return !p.folded&&!p.isHero;});
+  if(!handLive||!opps.length){el.innerHTML='';return;}
+  let main=opps[0];
+  opps.forEach(function(o){if((o.rLo||0)>(main.rLo||0))main=o;});
+  if(!showProfiles&&!tipsOpen){
+    el.innerHTML='<button class="ct-toggle" id="ctBtn">Show how to play '+main.name+'</button>';
+    const b=$('ctBtn');
+    if(b) b.addEventListener('click',function(){tipsOpen=true;renderCounterTips();});
+    return;
+  }
+  const c=COUNTER[main.profile];
+  el.innerHTML='<div class="ct-wrap"><div class="ct-head">'+c.head.replace('a ',main.name+' is a ')+'</div>'+
+    '<ul class="ct-list">'+c.bullets.map(function(b){return '<li>'+b+'</li>';}).join('')+'</ul>'+
+    (showProfiles?'':'<button class="ct-toggle" id="ctHide">Hide</button>')+'</div>';
+  const hb=$('ctHide');
+  if(hb) hb.addEventListener('click',function(){tipsOpen=false;renderCounterTips();});
+}
+
 /* ============================================================
    14. CONTROLS + WIRING
    ============================================================ */
@@ -1354,7 +1787,8 @@ function enableHeroControls(){
   $('btnRaise').textContent=(+sl.value>=maxT)?'All in':'Raise';
   $('raiseAmt').textContent=sl.value;
   $('status').innerHTML='Your move in <b>'+posName(0)+'</b> — '+(toCall>0?('<b>'+toCall+'</b> to call'):'checked to you')+'.';
-  renderHeroImage();renderRangeGuess();renderDrift();
+  heroSpot=snapshotSpot();
+  renderHeroImage();renderRangeGuess();renderCounterTips();renderDrift();
 }
 function disableHeroControls(){
   heroTurn=false;
@@ -1384,6 +1818,7 @@ $('btnDeal').addEventListener('click',function(){$('btnDeal').disabled=true;$('b
 $('btnRevealEq').addEventListener('click',showEquity);
 $('btnSkipGuess').addEventListener('click',function(){concludeHand(null);});
 $('btnClassify').addEventListener('click',classify);
+$('btnReset').addEventListener('click',function(){ if(confirm('Clear all saved stats and start fresh?')) resetSession(); });
 function buildSetupRows(){
   const wrap=$('setupRows');wrap.innerHTML='';
   SEAT_NAMES.forEach(function(nm,i){
@@ -1424,7 +1859,7 @@ $('rgOn').addEventListener('click',function(){rgOn=true;$('rgOn').classList.add(
 $('rgOff').addEventListener('click',function(){rgOn=false;$('rgOff').classList.add('on');$('rgOn').classList.remove('on');$('rangeGuessWrap').innerHTML='';});
 
 /* ---- build stamp + feedback ---- */
-const BUILD='v5';
+const BUILD='v7';
 $('buildTag').textContent='build '+BUILD+' · quote this when reporting a bug';
 $('fbBuild').value=BUILD+' · '+navigator.userAgent.slice(0,90);
 $('fbForm').addEventListener('submit',function(e){
@@ -1445,7 +1880,8 @@ $('fbForm').addEventListener('submit',function(e){
 });
 
 randomSeats();initPlayers();buildSeats();buildSetupRows();
-buildRangeIndex();hideEquity();renderStats();paint();
+loadSession();
+buildRangeIndex();hideEquity();renderStats();renderEvCharts();renderLeak();renderDrift();paint();
 $('metaLine').textContent="6-max · no-limit hold'em · "+SB+"/"+BB+" · "+START_STACK+" stacks";
 </script>
 </body>
