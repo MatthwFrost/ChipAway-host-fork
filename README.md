@@ -6,6 +6,8 @@ A 6-max no-limit hold'em trainer built around one idea: **you should be reading 
 
 ![Poker Trainer](preview.png)
 
+> **[Read the full maths →](MATHS.md)** — every formula derived, including the two that unit tests caught me getting wrong.
+
 ## Why it isn't just another poker game
 
 Most practice apps deal you cards and let you click buttons. This one models what the opponents could actually be holding.
@@ -32,6 +34,18 @@ Same cards, same board. Everything that changed is what you know about them.
 
 Bluffing the nit prints at any size. Bluffing the station never works at any size.
 
+**Decision EV review.** After every hand, each of your decisions is scored in chips against the best line that was available at that moment. Not "you lost" — *"on the flop you had 22% into a pot of 120; a ¾-pot bet would have folded them 66% of the time, worth about +77 against your check."* Validated against hand-computed cases: a call at exactly pot odds scores 0.00, as it must.
+
+**Session EV graph.** A cumulative line of chips leaked to non-optimal decisions. This separates "played well, got unlucky" from "played badly, got lucky" — something raw win/loss can never do. In testing it separates a player who always takes the highest-EV line (5.4 chips/hand) from one acting at random (348 chips/hand).
+
+**Leak of the session.** One sentence, not a wall of stats: the single most costly pattern in your play right now, weighted by severity.
+
+**Range-width trend.** A rolling 12-hand VPIP sparkline, so you can see yourself tightening or loosening across a session.
+
+**Stats persist** across reloads via localStorage, with a reset button.
+
+**Value extraction.** The mirror of fold equity: when you're ahead, a panel shows which bet size actually maximises what you win. Betting more raises the amount but also the chance they fold, and that product peaks somewhere. Against a station the answer is 1.5× pot; against a player repping one pair it's ⅔ pot.
+
 **Read scoring.** Before any cards turn over, you commit to what you think they have. Accuracy is tracked by street.
 
 **A read on you.** VPIP, PFR, aggression factor and fold-to-3-bet, matched against the five archetypes to tell you which one *you* are playing like — plus an alert when your last dozen hands drift passive.
@@ -54,6 +68,22 @@ One self-contained HTML file, roughly 1,400 lines, organised into numbered secti
 | 13 Stats & fold equity | 14 Wiring | | |
 
 Hand evaluation checks all 21 five-card combinations from seven cards. Equity is Monte Carlo with opponents sampled from their implied ranges and your known cards blocked out. Side pots are built by ascending commitment level — verified across 130 simulated hands, every pot balancing against chips committed.
+
+## The maths
+
+Everything the app computes is documented and derived in **[MATHS.md](MATHS.md)**: hand evaluation and the base-15 packing trick, Monte Carlo error bounds, the range model, pot odds, EV of every action, fold equity and minimum defence frequency, side-pot construction, logistic mixed strategies, and the style classifier.
+
+Three highlights if you only read one section:
+
+**Folding is always EV 0.** Not approximately — by definition. Chips in the pot aren't yours, so folding neither gains nor loses relative to now. Every other option is measured against that zero, which is precisely why "I've already put so much in" is a fallacy.
+
+**Betting has two ways to win, calling has one.**
+
+$$\mathrm{EV}_{\text{bet}} = \underbrace{f \cdot P}_{\text{they fold}} + \underbrace{(1-f)\big[e(P+B) - (1-e)B\big]}_{\text{they call}}$$
+
+That first term is the entire argument for aggression, and it's why a bet can beat a call even with weak equity.
+
+**Break-even bluff frequency and minimum defence frequency sum to 100%.** A pot-sized bluff needs folds more than 50% of the time; the defender must therefore continue at least 50%. Both fall out of the same indifference condition viewed from opposite sides.
 
 ## Known limits
 
