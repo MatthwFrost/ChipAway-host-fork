@@ -54,14 +54,82 @@ Bluffing the nit prints at any size. Bluffing the station never works at any siz
 
 ## Running it locally
 
-Install [Node.js 22](https://nodejs.org/), then run:
+### Prerequisites
+
+- [Node.js 22 or newer](https://nodejs.org/). Node includes the `npm` package manager.
+- Git, if you are cloning the repository rather than downloading it as a ZIP.
+
+Check that Node and npm are available:
+
+```bash
+node --version
+npm --version
+```
+
+### First-time setup
+
+Clone the project and enter its directory:
+
+```bash
+git clone https://github.com/tommmmiller/ChipAway.git
+cd ChipAway
+```
+
+Install the dependencies from `package-lock.json`:
 
 ```bash
 npm install
+```
+
+### Start the development server
+
+```bash
 npm run dev
 ```
 
-The macOS and Linux launchers in [`local/`](local/) run those steps for you. For a production check, use `npm run build` followed by `npm run preview`.
+Vite prints the local address in the terminal, normally [http://localhost:5173](http://localhost:5173). Open that address in a browser. The development server reloads the page automatically when source files change.
+
+To make the trainer available to another device on the same network, such as a phone, run:
+
+```bash
+npm run dev -- --host
+```
+
+Use the network address Vite prints. Your firewall may ask for permission the first time.
+
+### Production build
+
+Create the optimized production files:
+
+```bash
+npm run build
+```
+
+The output is written to `dist/`. Preview that exact build locally with:
+
+```bash
+npm run preview
+```
+
+### Checks
+
+Before submitting a change, run:
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+### One-click launchers
+
+Launchers are available in [`local/`](local/) for Windows, macOS, and Linux. They install dependencies when needed and start the development server:
+
+- Windows: double-click `Start Poker Trainer.bat`.
+- macOS: double-click `Start Poker Trainer.command`. If macOS blocks it, right-click it and choose **Open** once.
+- Linux: run `./local/start-poker-trainer.sh` from a terminal.
+
+The React version must run through the Vite development server; opening `index.html` directly will not start the application correctly.
 
 ## How it's built
 
