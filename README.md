@@ -54,11 +54,20 @@ Bluffing the nit prints at any size. Bluffing the station never works at any siz
 
 ## Running it locally
 
-Clone or download, then open `index.html`. That's it — no server, no build step, no dependencies. Double-click launchers for each platform are in [`local/`](local/).
+Install [Node.js 22](https://nodejs.org/), then run:
+
+```bash
+npm install
+npm run dev
+```
+
+The macOS and Linux launchers in [`local/`](local/) run those steps for you. For a production check, use `npm run build` followed by `npm run preview`.
 
 ## How it's built
 
-One self-contained HTML file, roughly 1,400 lines, organised into numbered sections:
+The interface is a Vite-powered React application split into focused components under [`src/components/`](src/components/). The established poker simulation is isolated behind a single initializer in [`src/engine/initializePokerTrainer.js`](src/engine/initializePokerTrainer.js), keeping the game maths separate from the interface while preserving its behaviour.
+
+The engine remains organised into numbered sections:
 
 | | | | |
 |---|---|---|---|
@@ -89,7 +98,7 @@ That first term is the entire argument for aggression, and it's why a bet can be
 
 - **No board texture.** Bots evaluate their own hand but never ask whether a flop favours their range or yours. This is the biggest remaining gap.
 - Ranges are strength quantiles rather than tracked combo sets, so preflop information is lost once the flop lands.
-- Session stats reset on reload.
+- Session stats are stored only in this browser, so they do not sync between devices.
 
 ## Roadmap
 
