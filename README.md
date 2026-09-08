@@ -54,11 +54,88 @@ Bluffing the nit prints at any size. Bluffing the station never works at any siz
 
 ## Running it locally
 
-Clone or download, then open `index.html`. That's it — no server, no build step, no dependencies. Double-click launchers for each platform are in [`local/`](local/).
+### Prerequisites
+
+- [Node.js 22 or newer](https://nodejs.org/). Node includes the `npm` package manager.
+- Git, if you are cloning the repository rather than downloading it as a ZIP.
+
+Check that Node and npm are available:
+
+```bash
+node --version
+npm --version
+```
+
+### First-time setup
+
+Clone the project and enter its directory:
+
+```bash
+git clone https://github.com/tommmmiller/ChipAway.git
+cd ChipAway
+```
+
+Install the dependencies from `package-lock.json`:
+
+```bash
+npm install
+```
+
+### Start the development server
+
+```bash
+npm run dev
+```
+
+Vite prints the local address in the terminal, normally [http://localhost:5173](http://localhost:5173). Open that address in a browser. The development server reloads the page automatically when source files change.
+
+To make the trainer available to another device on the same network, such as a phone, run:
+
+```bash
+npm run dev -- --host
+```
+
+Use the network address Vite prints. Your firewall may ask for permission the first time.
+
+### Production build
+
+Create the optimized production files:
+
+```bash
+npm run build
+```
+
+The output is written to `dist/`. Preview that exact build locally with:
+
+```bash
+npm run preview
+```
+
+### Checks
+
+Before submitting a change, run:
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+### One-click launchers
+
+Launchers are available in [`local/`](local/) for Windows, macOS, and Linux. They install dependencies when needed and start the development server:
+
+- Windows: double-click `Start Poker Trainer.bat`.
+- macOS: double-click `Start Poker Trainer.command`. If macOS blocks it, right-click it and choose **Open** once.
+- Linux: run `./local/start-poker-trainer.sh` from a terminal.
+
+The React version must run through the Vite development server; opening `index.html` directly will not start the application correctly.
 
 ## How it's built
 
-One self-contained HTML file, roughly 1,400 lines, organised into numbered sections:
+The interface is a Vite-powered React application split into focused components under [`src/components/`](src/components/). The established poker simulation is isolated behind a single initializer in [`src/engine/initializePokerTrainer.js`](src/engine/initializePokerTrainer.js), keeping the game maths separate from the interface while preserving its behaviour.
+
+The engine remains organised into numbered sections:
 
 | | | | |
 |---|---|---|---|
@@ -89,7 +166,7 @@ That first term is the entire argument for aggression, and it's why a bet can be
 
 - **No board texture.** Bots evaluate their own hand but never ask whether a flop favours their range or yours. This is the biggest remaining gap.
 - Ranges are strength quantiles rather than tracked combo sets, so preflop information is lost once the flop lands.
-- Session stats reset on reload.
+- Session stats are stored only in this browser, so they do not sync between devices.
 
 ## Roadmap
 

@@ -1,7 +1,4 @@
-.DS_Store
-Thumbs.db
-.netlify/
 node_modules/
+dist/
+.DS_Store
 *.log
-.vscode/
-.idea/
