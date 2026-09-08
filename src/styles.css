@@ -217,3 +217,62 @@ svg.spark{width:100%;height:52px;display:block;overflow:visible}
 .reset-btn:hover{background:#2B1A17;color:#D2705C}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:620px){.table-outer{aspect-ratio:auto;height:560px;padding:10px}.seat{width:100px}.card{width:34px;height:48px}.card .rank{font-size:12px}.card .pip{font-size:14px}}
+
+/* ---- coach panel (Tasks 4–6) ---- */
+.coach-verdict{font-family:'Fraunces',Georgia,serif;font-size:15.5px;font-weight:600;line-height:1.4;color:var(--brass);margin-bottom:9px}
+.coach-verdict b{color:var(--cream)}
+.coach-lines p{font-size:12.5px;line-height:1.6;color:var(--cream-dim);margin-bottom:7px}
+.coach-lines p:last-child{margin-bottom:0}
+.coach-lines b{color:var(--cream);font-family:'JetBrains Mono',monospace}
+.eq-duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+.eq-cap{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--slate);line-height:1.5}
+.eq-cap small{display:block;font-size:8.5px;color:#55635F;letter-spacing:.06em}
+.eq-col .equity-figure{font-size:25px;margin-top:3px}
+.eq-col .equity-figure span{font-size:11px}
+.eq-bar{height:7px;border-radius:999px;background:#0A1512;border:1px solid var(--line);overflow:hidden;margin-top:6px}
+.eq-bar i{display:block;height:100%;background:linear-gradient(90deg,rgba(124,140,136,.5),var(--slate));transition:width .5s ease}
+.eq-bar i.adj{background:linear-gradient(90deg,#2E9E7B,#48C39B)}
+.coach-disc{background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;margin-top:10px}
+.coach-disc summary{padding:9px 0 0;font-size:9px;letter-spacing:.13em}
+.coach-disc-body{padding:8px 0 2px}
+.coach-disc-body p{font-size:11.5px;line-height:1.6;color:var(--cream-dim);margin-bottom:6px}
+.coach-disc-body b{color:var(--brass);font-family:'JetBrains Mono',monospace}
+.coach-maths-line{font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.65;color:var(--cream-dim);padding:3px 0;border-top:1px solid #1B2A26}
+.coach-maths-line:first-child{border-top:0}
+.review-verdict{font-family:'Fraunces',Georgia,serif;font-size:14.5px;font-weight:600;line-height:1.4;margin-bottom:8px}
+.review-verdict.good{color:var(--win)}
+.review-verdict.warn{color:#E0B36A}
+.ev-good p,.ev-miss p{margin-bottom:6px}
+.ev-good p:last-child,.ev-miss p:last-child{margin-bottom:0}
+.ev-good b,.ev-miss b{font-family:'JetBrains Mono',monospace}
+
+/* ---- glossary ---- */
+.gloss-intro{font-size:12px;line-height:1.55;color:var(--cream-dim);margin-bottom:14px}
+.gloss-group{margin-bottom:16px}
+.gloss-group:last-child{margin-bottom:0}
+.gloss-list{margin:0}
+.gloss-item{padding:7px 0;border-top:1px solid #1B2A26;display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px}
+.gloss-item dt{font-size:12.5px;font-weight:600;color:var(--brass)}
+.gloss-item dd{font-size:12px;line-height:1.55;color:var(--cream-dim);margin:0}
+@media (max-width:620px){.gloss-item{grid-template-columns:minmax(0,1fr);gap:3px}}
+
+/* ---- equity tab: always on, above Your action ---- */
+.equity-tab .box-label{margin-bottom:12px}
+.eq-main{display:flex;align-items:center;gap:14px}
+.eq-ring{position:relative;width:82px;height:82px;flex:none}
+.eq-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.eq-ring circle{fill:none;stroke-width:6;stroke-linecap:round}
+.eq-ring-track{stroke:#16241F}
+.eq-ring-fill{stroke:url(#eqGrad);stroke:var(--win);transition:stroke-dashoffset .6s cubic-bezier(.16,.8,.3,1)}
+.eq-ring-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:23px;font-weight:700;letter-spacing:-.03em;color:var(--cream)}
+.eq-ring-num span{font-size:10px;color:var(--slate);font-weight:600;margin-left:1px;align-self:center}
+.eq-side{min-width:0;flex:1}
+.eq-side-cap{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--win)}
+.eq-side-sub{font-size:10.5px;color:#55635F;line-height:1.4;margin-top:1px}
+.eq-raw{display:flex;align-items:baseline;gap:6px;margin-top:9px;padding-top:8px;border-top:1px solid var(--line)}
+.eq-raw-num{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--cream-dim)}
+.eq-raw-num span{font-size:9px;color:var(--slate)}
+.eq-raw-cap{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--slate);line-height:1.3}
+.eq-raw-cap small{display:block;font-size:8.5px;color:#55635F;letter-spacing:.05em;text-transform:none}
+.equity-tab .equity-hand{margin-top:10px;font-size:14px}
+.equity-tab .meter{margin-top:8px}

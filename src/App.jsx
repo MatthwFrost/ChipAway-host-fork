@@ -5,6 +5,7 @@ import { PokerTable } from './components/PokerTable';
 import { SessionPanels } from './components/SessionPanels';
 import { ActionPanel } from './components/ActionPanel';
 import { EquityPanel } from './components/EquityPanel';
+import { CoachPanel } from './components/CoachPanel';
 import { ReadsPanel } from './components/ReadsPanel';
 import { TableSetup } from './components/TableSetup';
 
@@ -22,9 +23,10 @@ export function App() {
           <SessionPanels />
         </div>
         <aside className="panel" aria-label="Game controls and analysis">
+          <EquityPanel />
           <ActionPanel />
           <GuessPanel />
-          <EquityPanel />
+          <CoachPanel />
           <ReadsPanel />
           <TableSetup />
         </aside>

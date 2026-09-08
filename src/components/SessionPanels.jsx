@@ -1,3 +1,5 @@
+import { GlossaryPanel } from './GlossaryPanel';
+
 export function SessionPanels() {
   return (
     <div className="log-wrap">
@@ -19,6 +21,8 @@ export function SessionPanels() {
         <summary>Hand log</summary>
         <div className="details-body"><div className="log" id="log"><div>No hands played yet.</div></div></div>
       </details>
+
+      <GlossaryPanel />
 
       <details>
         <summary>Send feedback</summary>

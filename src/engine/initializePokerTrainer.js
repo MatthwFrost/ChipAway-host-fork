@@ -1,66 +1,15 @@
+import { buildCoachAdvice, buildHandReview, pctWhole, ci95Points } from './coach';
+import { analyzeHandShape, describeShape, outsToEquity, unseenCount } from './handShape';
+import {
+  RANK_CHARS, PIPS, makeDeck, shuffle, cardStr, cardTxt,
+  cmpScore, evaluateBest, scoreKey, handName,
+} from './evaluator';
+
 export function initializePokerTrainer(){
   if(window.__chipAwayInitialized)return;
   window.__chipAwayInitialized=true;
-/* ============================================================
-   1. CARD ENGINE
-   ============================================================ */
-const RANK_CHARS=['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
-const SUITS=['s','h','d','c'];
-const PIPS={s:'♠',h:'♥',d:'♦',c:'♣'};
-const makeDeck=function(){const d=[];for(let r=2;r<=14;r++)for(let i=0;i<4;i++)d.push({rank:r,suit:SUITS[i]});return d;};
-function shuffle(deck){const d=deck.slice();for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));const t=d[i];d[i]=d[j];d[j]=t;}return d;}
-const cardStr=function(c){return RANK_CHARS[c.rank-2]+c.suit;};
-const cardTxt=function(c){return RANK_CHARS[c.rank-2]+PIPS[c.suit];};
 const clamp=function(v,a,b){return v<a?a:(v>b?b:v);};
 const sigmoid=function(x){return 1/(1+Math.exp(-x));};
-
-/* ============================================================
-   2. HAND EVALUATOR
-   ============================================================ */
-function combos5(cards){
-  const out=[],n=cards.length;
-  for(let a=0;a<n;a++)for(let b=a+1;b<n;b++)for(let c=b+1;c<n;c++)
-  for(let d=c+1;d<n;d++)for(let e=d+1;e<n;e++) out.push([cards[a],cards[b],cards[c],cards[d],cards[e]]);
-  return out;
-}
-function evaluate5(cards){
-  const ranks=cards.map(function(c){return c.rank;}).sort(function(x,y){return y-x;});
-  const suits=cards.map(function(c){return c.suit;});
-  const isFlush=suits.every(function(s){return s===suits[0];});
-  const counts={};for(let i=0;i<ranks.length;i++)counts[ranks[i]]=(counts[ranks[i]]||0)+1;
-  const groups=Object.keys(counts).map(function(k){return {rank:+k,count:counts[k]};}).sort(function(a,b){return b.count-a.count||b.rank-a.rank;});
-  const uniq=ranks.filter(function(v,i){return ranks.indexOf(v)===i;});
-  let sh=null;
-  if(uniq.length===5){ if(uniq[0]-uniq[4]===4) sh=uniq[0]; else if(uniq.join(',')==='14,5,4,3,2') sh=5; }
-  if(sh&&isFlush) return [8,sh];
-  if(groups[0].count===4) return [7,groups[0].rank,groups[1].rank];
-  if(groups[0].count===3&&groups[1].count===2) return [6,groups[0].rank,groups[1].rank];
-  if(isFlush) return [5].concat(ranks);
-  if(sh) return [4,sh];
-  if(groups[0].count===3) return [3,groups[0].rank].concat(groups.slice(1).map(function(g){return g.rank;}));
-  if(groups[0].count===2&&groups[1].count===2){
-    const pr=[groups[0].rank,groups[1].rank].sort(function(a,b){return b-a;});
-    return [2,pr[0],pr[1],groups[2].rank];
-  }
-  if(groups[0].count===2) return [1,groups[0].rank].concat(groups.slice(1).map(function(g){return g.rank;}));
-  return [0].concat(ranks);
-}
-function cmpScore(a,b){
-  const n=Math.max(a.length,b.length);
-  for(let i=0;i<n;i++){const av=(a[i]===undefined?-1:a[i]),bv=(b[i]===undefined?-1:b[i]);if(av!==bv)return av-bv;}
-  return 0;
-}
-function evaluateBest(cards){
-  if(cards.length<5) return [-1];
-  if(cards.length===5) return evaluate5(cards);
-  const cs=combos5(cards);
-  let best=null;
-  for(let i=0;i<cs.length;i++){const s=evaluate5(cs[i]);if(best===null||cmpScore(s,best)>0)best=s;}
-  return best;
-}
-function scoreKey(s){let k=0;for(let i=0;i<6;i++)k=k*15+(s[i]===undefined?0:s[i]);return k;}
-const HAND_NAMES=['High card','Pair','Two pair','Three of a kind','Straight','Flush','Full house','Four of a kind','Straight flush'];
-const handName=function(s){return s[0]<0?'—':HAND_NAMES[s[0]];};
 
 /* ============================================================
    3. RANGE MODEL — polarised, sizing-sensitive, blocker-aware
@@ -283,7 +232,7 @@ const POS_MULT =[ 1.35, 0.95, 1.12, 0.60, 0.78, 1.05];
    6. GAME STATE
    ============================================================ */
 const SB=10,BB=20,START_STACK=1000;
-const HERO_TRIALS=900,BOT_TRIALS=170;
+const HERO_TRIALS=900,BOT_TRIALS=170,CALLED_TRIALS=380;
 let SPEED=1.15;
 const T=function(ms){return Math.round(ms*SPEED);};
 let players=[],deck=[],board=[],pot=0,street=0,currentBet=0,minRaise=BB;
@@ -385,35 +334,96 @@ function log(msg,cls){
 /* ============================================================
    8. EQUITY PANEL
    ============================================================ */
-function hideEquity(){$('eqBody').classList.remove('open');$('eqHidden').style.display='block';}
-function showEquity(){
+
+function hideCoach(){$('eqBody').classList.remove('open');$('eqHidden').style.display='block';}
+const RING_C=2*Math.PI*32;
+let lastEq=null;          // cached equity for the current spot
+let lastEqKey='';
+
+// The equity tab is always on: the two numbers are meant to become familiar,
+// not something you go and reveal. Recomputed only when the spot actually
+// changes, since each render is ~1400 simulated runouts.
+function renderEquityTab(force){
+  const hero=players[0];
+  const opps=players.filter(function(p){return !p.folded&&!p.isHero;});
+  if(!handLive||hero.folded||!hero.hole.length||!opps.length){ clearEquityTab(); return; }
+  const key=street+'|'+board.map(cardStr).join('')+'|'+opps.map(function(p){return p.id;}).join(',')+'|'+hero.hole.map(cardStr).join('');
+  if(!force&&key===lastEqKey&&lastEq) return;
+  const rawTrials=Math.round(HERO_TRIALS*0.6);
+  const eqR=calcEquity(hero.hole,opps,HERO_TRIALS,true);     // vs their implied ranges
+  const eqU=calcEquity(hero.hole,opps,rawTrials,false);      // vs random hands (baseline)
+  // Fix C3: calcEquity can report ok:false rather than fabricating a 0%.
+  if(!eqR.ok||!eqU.ok){ clearEquityTab(); return; }
+  lastEqKey=key;lastEq={eqR:eqR,eqU:eqU,rawTrials:rawTrials};
+
+  /* whole-number percentages, tie-aware (MATHS.md §2), with visible uncertainty */
+  const rawPct=pctWhole(eqU.equity/100);
+  const adjPct=pctWhole(eqR.equity/100);
+  const ci=ci95Points(eqR.se);
+  $('eqAdjNum').innerHTML=adjPct+'<span>%'+(ci===null?'':' ±'+ci)+'</span>';
+  $('eqRawNum').innerHTML=rawPct+'<span>%</span>';
+  $('eqRing').style.strokeDashoffset=RING_C*(1-clamp(eqR.equity,0,100)/100);
+  $('eqHand').textContent=board.length?handName(evaluateBest(hero.hole.concat(board))):'Preflop';
+  $('mWin').style.width=eqR.win+'%';$('mTie').style.width=eqR.tie+'%';$('mLose').style.width=eqR.lose+'%';
+  $('kWin').textContent='win '+Math.round(eqR.win)+'%';
+  $('kTie').textContent='tie '+Math.round(eqR.tie)+'%';
+  $('kLose').textContent='lose '+Math.round(eqR.lose)+'%';
+
+  const degradedNote=eqR.degradedShare>0.02
+    ? ' Range sampling degraded to random hands on '+Math.round(100*eqR.degradedShare)+'% of runouts here, because your cards block so much of their narrow range — treat the range figure loosely.'
+    : '';
+  $('eqReliabilityBody').innerHTML='<p>This spot ran <b>'+HERO_TRIALS+'</b> runouts against their ranges and <b>'+rawTrials+
+    '</b> against random hands.'+(ci===null?'':' Range-adjusted equity is <b>'+adjPct+'% ±'+ci+
+    '</b> points at 95% confidence, so the true figure is very likely between <b>'+Math.max(0,adjPct-ci)+'%</b> and <b>'+
+    Math.min(100,adjPct+ci)+'%</b>.')+degradedNote+'</p>';
+}
+function clearEquityTab(){
+  lastEq=null;lastEqKey='';
+  $('eqAdjNum').innerHTML='—<span>%</span>';
+  $('eqRawNum').innerHTML='—<span>%</span>';
+  $('eqRing').style.strokeDashoffset=RING_C;
+  $('eqHand').textContent='';
+  ['mWin','mTie'].forEach(function(id){$(id).style.width='0%';});
+  $('mLose').style.width='100%';
+  $('kWin').textContent='win —';$('kTie').textContent='tie —';$('kLose').textContent='lose —';
+  $('eqReliabilityBody').innerHTML='';
+}
+
+// Where hero sits, and whether that means acting last for the rest of the hand.
+function heroActsLast(){
+  const rank=function(i){const q=posOf(i);return q===0?6:q;};
+  const myRank=rank(0);
+  let last=true;
+  players.forEach(function(p,i){ if(!p.folded&&!p.isHero&&rank(i)>myRank) last=false; });
+  return last;
+}
+// What hero is actually holding: a made hand, or a draw chasing one.
+function heroShape(){
+  const hero=players[0];
+  if(!hero.hole.length) return null;
+  const shape=analyzeHandShape(hero.hole,board);
+  shape.description=describeShape(shape);
+  shape.equityFromOuts=outsToEquity(shape.outs,shape.cardsToCome,unseenCount(board));
+  if(shape.cardsToCome>=2) shape.riverOnlyEquity=outsToEquity(shape.outs,1,unseenCount(board)-1);
+  shape.madeName=board.length>=3?handName(evaluateBest(hero.hole.concat(board))):null;
+  return shape;
+}
+
+function showCoach(){
   const hero=players[0];
   if(!handLive||hero.folded||!hero.hole.length) return;
+  renderEquityTab();
+  if(!lastEq){ $('coachVerdict').textContent='Equity is temporarily unavailable in this spot.'; $('coachLines').innerHTML=''; }
   $('eqHidden').style.display='none';
   $('eqBody').classList.add('open');
+  if(!lastEq) return;
+  const eqR=lastEq.eqR, eqU=lastEq.eqU;
   const opps=players.filter(function(p){return !p.folded&&!p.isHero;});
-  const eqR=calcEquity(hero.hole,opps,HERO_TRIALS,true);
-  const eqU=calcEquity(hero.hole,opps,Math.round(HERO_TRIALS*0.6),false);
-  // Fix C3: calcEquity can now report ok:false instead of a fabricated 0%.
-  // At these trial counts (HERO_TRIALS+) it should be unreachable in practice,
-  // but a crash on a bad render is worse than a stale panel.
-  if(!eqR.ok||!eqU.ok){ $('eqNum').innerHTML='—'; $('eqSub').textContent='Equity temporarily unavailable this trial.'; return; }
-  $('eqNum').innerHTML=eqR.win.toFixed(1)+'<span>%</span>';
-  const diff=eqR.win-eqU.win;
+
   let main=opps[0];
   opps.forEach(function(o){if((o.rLo||0)>(main.rLo||0))main=o;});
   const blk=main?blockerPct(hero.hole,main):0;
-  // Fix C4: the range sampler can silently degrade toward random when a
-  // narrow range gets blocked out; warn once it affects a meaningful share
-  // of trials rather than letting "vs their range" quietly become "vs random".
-  const degradedNote=eqR.degradedShare>0.02?'<br><span style="opacity:.7">range sampling degraded on '+(100*eqR.degradedShare).toFixed(0)+'% of trials — treat this estimate loosely</span>':'';
-  $('eqSub').innerHTML='vs their ranges &nbsp;·&nbsp; vs random <b>'+eqU.win.toFixed(1)+'%</b> ('+(diff>=0?'+':'')+diff.toFixed(1)+')'+
-    (main?'<br>your cards block <b>'+blk.toFixed(1)+'%</b> of '+main.name+"'s value combos":'')+degradedNote;
-  $('eqHand').textContent=board.length?handName(evaluateBest(hero.hole.concat(board))):'Preflop';
-  $('mWin').style.width=eqR.win+'%';$('mTie').style.width=eqR.tie+'%';$('mLose').style.width=eqR.lose+'%';
-  $('kWin').textContent='win '+eqR.win.toFixed(0)+'%';
-  $('kTie').textContent='tie '+eqR.tie.toFixed(0)+'%';
-  $('kLose').textContent='lose '+eqR.lose.toFixed(0)+'%';
+  $('eqSub').innerHTML=main?('your cards block <b>'+Math.round(blk)+'%</b> of '+main.name+"'s value combos"):'';
   if(main){
     const vLo=(main.rLo||0)*100, bl=(main.rBluff||0);
     $('rangeBar').innerHTML='<div class="rb-lab"><span>'+main.name+"'s implied range</span><span>"+
@@ -421,35 +431,46 @@ function showEquity(){
       '<div class="rb-track"><div class="rb-val" style="left:'+vLo+'%;right:0"></div>'+
       (bl>0.02?'<div class="rb-bluff" style="width:'+(BLUFF_TOP*100)+'%;opacity:'+Math.min(1,bl*2.2)+'"></div>':'')+'</div>';
   } else $('rangeBar').innerHTML='';
-  const onTable=pot+players.reduce(function(s,p){return s+p.bet;},0);
-  const toCall=Math.min(currentBet-hero.bet,hero.stack);
+
   const spot=snapshotSpot();
-  // Fix C1/C7: use the same honest ranking as snapshotSpot (check dominates
-  // fold; options within noise of each other are grouped, cheapest wins)
-  // instead of a second, simpler sort that reproduced the fold/check bug.
-  const rankResult=rankOptions(spot.options);
-  const ranked=rankResult.ranked;
-  const best=rankResult.recommended;
-  let rows='';
-  ranked.forEach(function(o){
-    const cls=o===best?'ev-pos':(o.ev<0?'ev-neg':'');
-    rows+='<tr><td class="'+cls+'">'+o.label+'</td>'+
-      '<td class="'+cls+'">'+(o.ev>=0?'+':'')+o.ev.toFixed(0)+'</td>'+
-      '<td>'+(o.fold!==undefined?(100*o.fold).toFixed(0)+'% fold':'\u2014')+'</td></tr>';
+  // Fix C1/C7: same honest ranking as snapshotSpot -- check dominates fold, and
+  // options inside each other's error bars are grouped with the cheapest winning.
+  const best=rankOptions(spot.options).recommended;
+  const P=spot.pot;
+  let bestAggro=null;
+  spot.options.forEach(function(o){ if(o.fold!==undefined&&(!bestAggro||o.ev>bestAggro.ev)) bestAggro=o; });
+  const refB=bestAggro?bestAggro.amount:Math.max(BB,Math.round(P*0.75));
+  const oppInfo=opps.map(function(o){
+    return {name:o.name,foldChance:foldChance(o,refB,P),rangeTopPct:rangeWidth(o),
+            airPct:100*(o.rBluff||0),styleLabel:PROFILES[o.profile].label};
   });
-  let why;
-  if(best.label==='fold'){
-    why='Every line loses money here. '+(toCall>0?'Calling '+toCall+' needs <b>'+(100*toCall/(onTable+toCall)).toFixed(0)+'%</b> and you have <b>'+(100*eqR.win/100*100).toFixed(0)+'%</b>':'Nothing to win')+'.';
-  } else if(best.fold!==undefined){
-    why='<b>'+best.label+'</b> wins most: they fold <b>'+(100*best.fold).toFixed(0)+'%</b> of the time, and when called you still hold <b>'+eqR.equity.toFixed(0)+'%</b>.';
-  } else if(best.label.indexOf('call')===0){
-    why='Calling is best: you need <b>'+(100*toCall/(onTable+toCall)).toFixed(0)+'%</b> and hold <b>'+eqR.equity.toFixed(0)+'%</b>, but raising folds out too much of what you beat.';
-  } else {
-    why='Checking is best \u2014 betting folds out hands you are beating.';
-  }
-  $('oddsNote').innerHTML='<div class="val-head" style="margin-bottom:6px">Every line, ranked by EV</div>'+
-    '<table class="val-tab"><tr><th>action</th><th>EV</th><th>fold equity</th></tr>'+rows+'</table>'+
-    '<div class="val-note">'+why+'</div>';
+  const advice=buildCoachAdvice({
+    streetName:STREETS[Math.min(street,4)],
+    toCall:spot.toCall,
+    pot:P,
+    rawEquity:eqU.equity/100,
+    rangeEquity:eqR.equity/100,
+    equitySe:eqR.se,
+    degradedShare:eqR.degradedShare,
+    trials:HERO_TRIALS,
+    opponents:oppInfo,
+    options:spot.options,
+    recommended:best,
+    revealStyles:showProfiles,
+    villain:oppInfo[opps.indexOf(main)],
+    shape:heroShape(),
+    position:{name:posName(0),actsLast:heroActsLast(),preflop:street===0}
+  });
+  $('coachVerdict').innerHTML=advice.verdict;
+  $('coachLines').innerHTML=advice.lines.map(function(l){return '<p>'+l+'</p>';}).join('');
+  $('coachFreqBody').innerHTML='<table class="val-tab"><tr><th>action</th><th>EV</th><th>they fold</th></tr>'+
+    advice.frequencies.map(function(f){
+      const cls=f.recommended?'ev-pos':'';
+      return '<tr><td class="'+cls+'">'+f.label+'</td><td class="'+cls+'">'+f.ev+'</td><td>'+(f.fold||'—')+'</td></tr>';
+    }).join('')+'</table>'+
+    '<div class="mini-note">Frequencies, not commandments. Two lines within a few chips of each other are the same decision — mixing between them is what stops you being readable.</div>';
+  $('coachMathsBody').innerHTML=advice.maths.map(function(m){return '<div class="coach-maths-line">'+m+'</div>';}).join('')+
+    '<div class="mini-note">EV figures price the '+contestingOpps().length+' opponent(s) expected to keep going, use your equity against the hands that would actually call, and include a small credit for acting last. The equity tab above is against all '+opps.length+' player(s) still in, so the two differ by a point or two.</div>';
   renderValueBet();
 }
 
@@ -534,12 +555,13 @@ function collectBets(){
 function startHand(){
   handNo++;
   players.forEach(function(p){if(p.stack<=0)p.stack=START_STACK;});
+  heroStackStart=players[0].stack;lastOutcome=null;
   deck=shuffle(makeDeck());
   board=[];lastBoardCount=-1;pot=0;street=0;currentBet=0;minRaise=BB;
   handLive=true;revealAll=false;streetRaises=0;lastAggressor=-1;villainIdx=-1;pendingResult=null;lastMultiway=[];rgAskedStreet=-1;handDecisions=[];heroSpot=null;tipsOpen=false;$('evReview').innerHTML='';
   players.forEach(function(p){p.hole=[];p.folded=false;p.allIn=false;p.bet=0;p.committed=0;p.acted=false;p.mayRaise=true;p.raises=0;p.badge='';p.badgeCls='';p.rLo=0;p.rBluff=0;p.score=null;});
   hf={vpip:false,pfr:false,raisedPre:false,f3bCounted:false,sawShowdown:false,aggro:0,calls:0};
-  hideEquity();$('guessBox').style.display='none';
+  hideCoach();$('guessBox').style.display='none';
   dealerIdx=(dealerIdx+1)%players.length;
   buildRangeIndex();
   let di=0;
@@ -554,6 +576,7 @@ function startHand(){
   log(players[sbIdx].name+' posts '+SB+', '+players[bbIdx].name+' posts '+BB);
   actingIdx=nextActive(bbIdx);
   paint();
+  renderEquityTab(true);
   $('status').innerHTML='Cards are out. You are in <b>'+posName(0)+'</b>.';
   setTimeout(step,T(900));
 }
@@ -580,7 +603,7 @@ function advanceStreet(){
     players.forEach(function(p){p.rLo*=0.88;p.rBluff*=0.80;});
     log('<span class="street">'+STREETS[street]+' · '+board.map(cardTxt).join(' ')+'</span>','street');
     actingIdx=nextActive(dealerIdx);
-    hideEquity();paint();
+    hideCoach();renderEquityTab();paint();
     $('status').innerHTML='<b>'+STREETS[street]+'</b> — '+board.map(cardTxt).join(' ');
     const canAct=players.filter(function(p){return !p.folded&&!p.allIn;});
     if(canAct.length<=1){setTimeout(advanceStreet,T(1500));return;}
@@ -595,7 +618,7 @@ function heroFold(){
   if(street===0&&hf.raisedPre&&currentBet>h.bet&&!hf.f3bCounted){stats.f3bOpp++;stats.f3b++;hf.f3bCounted=true;}
   recordDecision('fold');
   setBadge(h,'fold','b-fold');log('<span class="hl">You</span> fold');
-  disableHeroControls();hideEquity();
+  disableHeroControls();hideCoach();clearEquityTab();
   $('status').innerHTML='You folded — the hand plays on. Everything is revealed at the end.';
   paint();actingIdx=nextActive(0);setTimeout(step,T(700));
 }
@@ -859,7 +882,10 @@ function concludeHand(guess){
   handLog.push({vpip:hf.vpip,pfr:hf.pfr,aggro:hf.aggro,calls:hf.calls});
   const handCost=handDecisions.reduce(function(a,d){return a+Math.max(0,d.cost);},0);
   evRecords.push({cost:handCost,n:handDecisions.length});
-  renderEvReview();renderEvCharts();renderLeak();
+  lastOutcome={net:players[0].stack-heroStackStart,
+               showdown:contenders.length>1&&board.length>=5,
+               folded:players[0].folded};
+  renderHandReview();renderEvCharts();renderLeak();
   renderStats();renderDrift();$('rangeGuessWrap').innerHTML='';
   saveSession();
   villainIdx=-1;paint();
@@ -928,28 +954,52 @@ function projectedHeroRep(B,P){
 // Price elasticity matters: a bigger bet demands a stronger hand to continue,
 // which is what stops "always shove" from being the answer with a strong hand.
 function foldChancePre(o,betSize){
+  const lo=o.rLo||0, width=1-lo;
+  if(width<=0) return 0;
+  const contin=1-continueThresholdPre(o,betSize);
+  return clamp(1-contin/width,0,0.94);
+}
+// The quantile above which they keep playing. Everything from here up is their
+// CALLING range -- which is what hero's hand actually has to beat once a bet
+// gets called, and is strictly stronger than their whole range.
+function continueThresholdPre(o,betSize){
   const prof=o.isHero?HERO_PROF:PROFILES[o.profile];
   const facing=Math.max(BB,currentBet);
   const ratio=betSize/facing;
   // negative callBuffer means they call more, so they keep more of their range
   const keep=clamp(0.62*Math.pow(Math.max(1,ratio),-0.75)-(prof.callBuffer||0)*1.6,0.06,0.95);
   const lo=o.rLo||0, width=1-lo;
-  if(width<=0) return 0;
+  if(width<=0) return lo;
   const contin=Math.min(width,keep*width+0.015);
-  return clamp(1-contin/width,0,0.94);
+  return clamp(1-contin,0,0.995);
 }
-function foldChance(o,betSize,potSize){
-  if(street===0) return foldChancePre(o,betSize);
+function continueThreshold(o,betSize,potSize){
+  if(street===0) return continueThresholdPre(o,betSize);
   const prof=o.isHero?HERO_PROF:PROFILES[o.profile];
   const rep=projectedHeroRep(betSize,potSize);
   const need=betSize/(potSize+2*betSize);
   const s=rep.rBluff;
   const beatNeed=clamp((need-s)/Math.max(1e-6,1-s),0,1);
   const elastic=clamp(0.15*Math.log(1+betSize/Math.max(1,potSize)),0,0.20);
-  const t=clamp(rep.rLo+beatNeed*(1-rep.rLo)*0.55+elastic+(prof.callBuffer||0),0,0.995);
+  return clamp(rep.rLo+beatNeed*(1-rep.rLo)*0.55+elastic+(prof.callBuffer||0),0,0.995);
+}
+function foldChance(o,betSize,potSize){
+  if(street===0) return foldChancePre(o,betSize);
+  const t=continueThreshold(o,betSize,potSize);
   const lo=o.rLo||0, bl=o.rBluff||0;
   const below=function(x,a,b){return clamp((x-a)/Math.max(1e-6,b-a),0,1);};
   return (1-bl)*below(t,lo,1)+bl*below(t,0,BLUFF_TOP);
+}
+// Equity against the hands that would actually call a bet of this size. A caller
+// holds the top of their range, and almost never pure air, so this is lower than
+// unconditional equity -- and it falls further the bigger the bet. Without it,
+// EV(bet) rises with size almost without limit and every spot recommends a raise.
+function equityIfCalled(hole,opps,betSize,potSize,trials){
+  const tightened=opps.map(function(o){
+    return {rLo:Math.max(o.rLo||0,continueThreshold(o,betSize,potSize)),
+            rBluff:(o.rBluff||0)*0.30};
+  });
+  return calcEquity(hole,tightened,trials,true);
 }
 function renderFoldEquity(){
   const hero=players[0];
@@ -1099,7 +1149,17 @@ function evOfBet(e,P,B,f){ return f*P+(1-f)*(e*(P+B)-(1-e)*B); }
 // error through the EV formulas (d/de of each above) so EV can be reported
 // with the precision it actually has (fix C7).
 function evCallSe(P,C,eSe){ return (eSe==null)?null:(P+C)*eSe; }
-function evBetSe(P,B,f,eSe){ return (eSe==null)?null:(1-f)*(P+2*B)*eSe; }
+// The fold estimate is the least reliable input in the whole model: it is a
+// heuristic over a quantile range, not a measurement, and a bigger bet
+// extrapolates it further from anything the opponent has actually shown. Pricing
+// it as certain is what made large bets look strictly better than small ones.
+function foldSe(B,P){ return 0.03+0.03*Math.min(2,B/Math.max(1,P)); }
+function evBetSe(P,B,f,eSe,e){
+  const fromE=(eSe==null)?0:(1-f)*(P+2*B)*eSe;
+  const called=(e==null)?0:(e*(P+B)-(1-e)*B);
+  const fromF=Math.abs(P-called)*foldSe(B,P);      // d/df of f*P + (1-f)*called
+  return Math.sqrt(fromE*fromE+fromF*fromF);
+}
 // Rank the available actions honestly. Two rules beyond raw EV order:
 //  a) options whose error bars overlap the leader's are indistinguishable;
 //     among those, the one risking fewest chips is recommended (fix C7).
@@ -1134,6 +1194,7 @@ function rankOptions(opts){
 }
 
 let handDecisions=[];   // every hero decision this hand
+let heroStackStart=START_STACK;
 let evRecords=[];       // one entry per hand, persisted
 
 // Measure against opponents who actually have chips in beyond the blinds.
@@ -1192,6 +1253,10 @@ function snapshotSpot(){
   opts.push({label:'fold',ev:0,amount:0,evSe:0});
   if(C>0) opts.push({label:'call '+C,ev:evOfCall(e,P,C),amount:C,evSe:evCallSe(P,C,eq.se)});
   else opts.push({label:'check',ev:0,amount:0,evSe:0});
+  // Build the candidate sizes first, so conditional equity can be anchored at
+  // the smallest and largest of them and interpolated in between -- two Monte
+  // Carlo runs instead of one per size.
+  const sizes=[];
   [[0.33,'\u2153 pot'],[0.5,'\u00bd pot'],[0.75,'\u00be pot'],[1,'pot'],[1.5,'1.5\u00d7 pot']].forEach(function(sz){
     // A raise must reach at least currentBet + minRaise. Size the pot fraction
     // off the pot AFTER calling, which is how raise sizing actually works.
@@ -1203,11 +1268,35 @@ function snapshotSpot(){
     const B=target-h.bet;                       // chips hero actually adds
     if(B<BB||B>h.stack) return;
     if(opts.some(function(o){return o.amount===B;})) return;
-    let f=1;
-    ref.forEach(function(o){ f*=foldChance(o,B,P); });
-    const allIn=(B>=h.stack);
-    opts.push({label:allIn?('all in '+target):((C>0?'raise to ':'bet ')+target+' ('+sz[1]+')'),ev:evOfBet(e,P,B,f),amount:B,target:target,fold:f,n:ref.length,evSe:evBetSe(P,B,f,eq.se)});
+    if(sizes.some(function(x){return x.B===B;})) return;
+    sizes.push({B:B,target:target,label:sz[1]});
   });
+  if(sizes.length&&ref.length){
+    const meanT=function(B){
+      let t=0; ref.forEach(function(o){ t+=continueThreshold(o,B,P); });
+      return t/ref.length;
+    };
+    const lo=sizes[0], hi=sizes[sizes.length-1];
+    const eqLo=equityIfCalled(h.hole,ref,lo.B,P,CALLED_TRIALS);
+    const eqHi=(sizes.length>1)?equityIfCalled(h.hole,ref,hi.B,P,CALLED_TRIALS):eqLo;
+    const tLo=meanT(lo.B), tHi=meanT(hi.B), tSpan=tHi-tLo;
+    sizes.forEach(function(sz){
+      let f=1;
+      ref.forEach(function(o){ f*=foldChance(o,sz.B,P); });
+      // equity conditional on being called, interpolated by how much this size
+      // narrows their continuing range
+      let eCalled;
+      if(!eqLo.ok||!eqHi.ok) eCalled=e;
+      else{
+        const w=(Math.abs(tSpan)<1e-6)?0:clamp((meanT(sz.B)-tLo)/tSpan,0,1);
+        eCalled=clamp((eqLo.equity+(eqHi.equity-eqLo.equity)*w)/100,0,1);
+      }
+      const allIn=(sz.B>=h.stack);
+      opts.push({label:allIn?('all in '+sz.target):((C>0?'raise to ':'bet ')+sz.target+' ('+sz.label+')'),
+        ev:evOfBet(eCalled,P,sz.B,f),amount:sz.B,target:sz.target,fold:f,n:ref.length,
+        eCalled:eCalled,evSe:evBetSe(P,sz.B,f,eqLo.ok?eqLo.se:eq.se,eCalled)});
+    });
+  }
   const best=rankOptions(opts).recommended;
   return {street:street,equity:e,equitySe:eq.se,degraded:eq.degraded,pot:P,toCall:C,options:opts,best:best};
 }
@@ -1235,37 +1324,32 @@ function recordDecision(kind,amount){
     label=(opt?opt.label:kind+' '+amount);
   }
   const evTaken=opt?opt.ev:0;
-  handDecisions.push({street:heroSpot.street,taken:label,evTaken:evTaken,
-    best:heroSpot.best,cost:Math.max(0,heroSpot.best.ev-evTaken),equity:heroSpot.equity,pot:heroSpot.pot});
+  handDecisions.push({street:heroSpot.street,streetName:STREETS[Math.min(heroSpot.street,4)],
+    taken:label,evTaken:evTaken,best:heroSpot.best,cost:Math.max(0,heroSpot.best.ev-evTaken),
+    equity:heroSpot.equity,pot:heroSpot.pot,toCall:heroSpot.toCall,nOpp:nOppLive()});
   heroSpot=null;
 }
 let heroSpot=null;
 
-function renderEvReview(){
+// Task 6: decision quality and outcome are separate facts, and the review says
+// so out loud. Layer 1 is a plain-language verdict, layer 2 the per-street
+// frequencies, layer 3 the maths -- both optional, both folded away by default.
+let lastOutcome=null;
+function renderHandReview(){
   const el=$('evReview');
-  if(!handDecisions.length){el.innerHTML='';return;}
-  let worst=handDecisions[0];
-  handDecisions.forEach(function(d){ if(d.cost>worst.cost) worst=d; });
-  const total=handDecisions.reduce(function(a,d){return a+d.cost;},0);
-  let html='<div class="ev-box"><div class="ev-line">Decision review, this hand:</div>';
-  handDecisions.forEach(function(d){
-    const cls=d.cost>1?'ev-neg':'ev-pos';
-    html+='<div class="ev-line">'+STREETS[d.street]+' \u2014 you <b>'+d.taken+'</b>'+
-      ' ('+(d.evTaken>=0?'+':'')+d.evTaken.toFixed(0)+')'+
-      (d.cost>1?' \u00b7 best was <b>'+d.best.label+'</b> (+'+d.best.ev.toFixed(0)+')':' \u00b7 <span class="ev-pos">best available</span>')+
-      '</div>';
-  });
-  if(total>1&&worst.cost>1){
-    const b=worst.best;
-    html+='<div class="ev-miss"><b>Biggest miss:</b> on the '+STREETS[worst.street].toLowerCase()+
-      ' you had <b>'+(100*worst.equity).toFixed(0)+'%</b> equity into a pot of <b>'+worst.pot+'</b>. '+
-      (b.fold!==undefined
-        ? 'A '+b.label+' would have folded them <b>'+(100*b.fold).toFixed(0)+'%</b> of the time, worth about <b>+'+b.ev.toFixed(0)+'</b> chips against your <b>'+(worst.evTaken>=0?'+':'')+worst.evTaken.toFixed(0)+'</b>.'
-        : 'The better line was to '+b.label+', worth about <b>+'+b.ev.toFixed(0)+'</b>.')+
-      '</div>';
-  } else {
-    html+='<div class="ev-good">Every decision this hand was the highest-EV option available. Result aside, you played it right.</div>';
-  }
+  const review=buildHandReview(handDecisions,lastOutcome);
+  if(!review){el.innerHTML='';return;}
+  const cls=review.clean?'ev-good':'ev-miss';
+  let html='<div class="ev-box"><div class="review-verdict '+(review.clean?'good':'warn')+'">'+review.verdict+'</div>';
+  html+='<div class="'+cls+'">'+review.lines.map(function(l){return '<p>'+l+'</p>';}).join('')+'</div>';
+  html+='<details class="coach-disc"><summary>Street by street</summary><div class="coach-disc-body">'+
+    '<table class="val-tab"><tr><th>street</th><th>you</th><th>EV</th><th>best</th></tr>'+
+    review.frequencies.map(function(f){
+      return '<tr><td>'+f.street+'</td><td>'+f.taken+'</td><td class="'+(f.best?'ev-neg':'ev-pos')+'">'+f.ev+'</td>'+
+        '<td>'+(f.best?f.best+' ('+f.bestEv+')'+(f.fold?' · folds '+f.fold:''):'best available')+'</td></tr>';
+    }).join('')+'</table></div></details>';
+  html+='<details class="coach-disc"><summary>Show the maths</summary><div class="coach-disc-body">'+
+    review.maths.map(function(m){return '<div class="coach-maths-line">'+m+'</div>';}).join('')+'</div></details>';
   el.innerHTML=html+'</div>';
 }
 
@@ -1396,9 +1480,13 @@ function valueCurve(){
     if(B<BB||B>hero.stack) return;
     let f=1;
     opps.forEach(function(o){ f*=foldChance(o,B,P); });
-    const called=(1-f)*(e*(P+B)-(1-e)*B);   // what the called branch is worth
-    const ev=f*P+(1-f)*(e*(P+B)-(1-e)*B);
-    rows.push({label:sz[1],B:B,f:f,called:called,ev:ev,extra:(1-f)*B*e});
+    // Getting paid is priced against the hands that actually call, not against
+    // their whole range -- otherwise the biggest size always looks the best.
+    const eqC=equityIfCalled(hero.hole,opps,B,P,CALLED_TRIALS);
+    const ec=eqC.ok?clamp(eqC.equity/100,0,1):e;
+    const called=(1-f)*(ec*(P+B)-(1-ec)*B);   // what the called branch is worth
+    const ev=f*P+called;
+    rows.push({label:sz[1],B:B,f:f,called:called,ev:ev,extra:(1-f)*B*ec});
   });
   if(!rows.length) return null;
   let peak=rows[0];
@@ -1476,6 +1564,7 @@ function enableHeroControls(){
   $('btnRaise').textContent=(+sl.value>=maxT)?'All in':'Raise';
   $('raiseAmt').textContent=sl.value;
   $('status').innerHTML='Your move in <b>'+posName(0)+'</b> — '+(toCall>0?('<b>'+toCall+'</b> to call'):'checked to you')+'.';
+  renderEquityTab();
   heroSpot=snapshotSpot();
   renderHeroImage();renderRangeGuess();renderCounterTips();renderDrift();
 }
@@ -1504,7 +1593,7 @@ $('btnFold').addEventListener('click',heroFold);
 $('btnCall').addEventListener('click',heroCall);
 $('btnRaise').addEventListener('click',heroRaise);
 $('btnDeal').addEventListener('click',function(){$('btnDeal').disabled=true;$('btnDeal').textContent='Hand in play';startHand();});
-$('btnRevealEq').addEventListener('click',showEquity);
+$('btnRevealEq').addEventListener('click',showCoach);
 $('btnSkipGuess').addEventListener('click',function(){concludeHand(null);});
 $('btnClassify').addEventListener('click',classify);
 $('btnReset').addEventListener('click',function(){ if(confirm('Clear all saved stats and start fresh?')) resetSession(); });
@@ -1570,6 +1659,6 @@ $('fbForm').addEventListener('submit',function(e){
 
 randomSeats();initPlayers();buildSeats();buildSetupRows();
 loadSession();
-buildRangeIndex();hideEquity();renderStats();renderEvCharts();renderLeak();renderDrift();paint();
+buildRangeIndex();hideCoach();clearEquityTab();renderStats();renderEvCharts();renderLeak();renderDrift();paint();
 $('metaLine').textContent="6-max · no-limit hold'em · "+SB+"/"+BB+" · "+START_STACK+" stacks";
 }
