@@ -120,6 +120,38 @@ describe('coach advice', () => {
     expect(text).toContain('a bluff has nowhere to go');
   });
 
+  const drawShape = {
+    isDrawing: true, madeCategory: 0, usesHoleCards: false, outs: 9,
+    equityFromOuts: 0.35, cardsToCome: 2, riverOnlyEquity: 0.19, description: 'a flush draw',
+  };
+
+  test('a semi-bluff into a player who almost never folds says so plainly', () => {
+    const opponents = [{ name: 'Kaz', foldChance: 0.05, rangeTopPct: 55, airPct: 20, styleLabel: 'Maniac' }];
+    const text = allText(buildCoachAdvice(spot({ opponents, villain: opponents[0], shape: drawShape })));
+    expect(text).toContain('not a real bluff');
+    expect(text).toContain('actually hitting your outs');
+  });
+
+  test('a semi-bluff into a player who folds a lot says the fold part is real', () => {
+    const opponents = [{ name: 'Idris', foldChance: 0.8, rangeTopPct: 15, airPct: 2, styleLabel: 'Nit' }];
+    const text = allText(buildCoachAdvice(spot({ opponents, villain: opponents[0], shape: drawShape })));
+    expect(text).toContain('bluff part of this bet is real');
+  });
+
+  // Regression: the fold-chance context used to be hardcoded to 0.35 for any
+  // spot with 2+ opponents, ignoring who was actually at the table. Two nits
+  // who each fold 70% of the time give a joint fold chance of 49% (>= the 40%
+  // foldy cutoff) — the old hardcoded default would have wrongly reported this
+  // as a sticky table.
+  test('two tight players who both fold a lot are read as foldy, not sticky', () => {
+    const opponents = [
+      { name: 'Idris', foldChance: 0.7, rangeTopPct: 15, airPct: 2, styleLabel: 'Nit' },
+      { name: 'Bernard', foldChance: 0.7, rangeTopPct: 18, airPct: 2, styleLabel: 'Nit' },
+    ];
+    const text = allText(buildCoachAdvice(spot({ opponents, villain: opponents[0], shape: drawShape })));
+    expect(text).toContain('bluff part of this bet is real');
+  });
+
   test('multiway pots get a field-size line and the raise-as-a-tool line', () => {
     const opponents = [
       { name: 'Sofia', foldChance: 0.45, rangeTopPct: 30, airPct: 5, styleLabel: 'TAG' },

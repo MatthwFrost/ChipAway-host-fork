@@ -159,6 +159,9 @@ export function shapeLines(shape, ctx) {
     out.push('That is ' + b(shape.outs + ' outs') + ', which get there about ' + b(pctWhole(shape.equityFromOuts) + '%') +
       ' of the time by the river.' + (hasPair ? '' : ' Right now you beat nothing that is calling you.'));
     out.push('A draw plays better as a bet than as a call: betting wins the pot when they fold now, and again when you hit later. Calling only wins the second way.');
+    out.push(foldy
+      ? 'Against this table the first way is live too — they fold often enough that the bluff part of this bet is real, not just theory.'
+      : 'Against this table, though, do not bank on the first way — they rarely fold, so almost all of this bet’s edge has to come from actually hitting your outs. That makes it a value-and-protection bet with a little bluff equity attached, not a real bluff.');
     if (shape.cardsToCome >= 2 && shape.riverOnlyEquity !== undefined) {
       out.push('Plan the next street now. If the turn bricks, the same outs are only worth ' +
         b(pctWhole(shape.riverOnlyEquity) + '%') + ' for the river alone — so decide now whether a missed turn means another bet or a cheap exit.');
@@ -239,7 +242,15 @@ export function buildCoachAdvice(spot) {
   }
 
   /* 3b. what you are actually holding */
-  shapeLines(spot.shape, { foldChance: spot.opponents && spot.opponents.length === 1 ? spot.opponents[0].foldChance : 0.35 })
+  // The relevant read for "will fold equity carry this bet" is the joint chance
+  // EVERYONE still in folds — the same multiplicative fold-equity math used for
+  // bet sizing elsewhere (initializePokerTrainer.js foldChance product). A flat
+  // placeholder here used to ignore who was actually at the table once there
+  // were 2+ opponents, so two maniacs and two nits read identically.
+  const jointFoldChance = opps.length
+    ? opps.reduce(function (acc, o) { return acc * o.foldChance; }, 1)
+    : 0.35;
+  shapeLines(spot.shape, { foldChance: jointFoldChance })
     .forEach(function (l) { lines.push(l); });
 
   /* 4. multiway */
