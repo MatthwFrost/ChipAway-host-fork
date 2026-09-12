@@ -458,6 +458,7 @@ function showCoach(){
     recommended:best,
     revealStyles:showProfiles,
     villain:oppInfo[opps.indexOf(main)],
+    field:fieldBreakdown(),
     shape:heroShape(),
     position:{name:posName(0),actsLast:heroActsLast(),preflop:street===0}
   });
@@ -466,9 +467,10 @@ function showCoach(){
   $('coachFreqBody').innerHTML='<table class="val-tab"><tr><th>action</th><th>EV</th><th>they fold</th></tr>'+
     advice.frequencies.map(function(f){
       const cls=f.recommended?'ev-pos':'';
-      return '<tr><td class="'+cls+'">'+f.label+'</td><td class="'+cls+'">'+f.ev+'</td><td>'+(f.fold||'—')+'</td></tr>';
+      const tag=f.recommended?' ← pick':(f.tied?' <span class="fq-tied">= same call</span>':'');
+      return '<tr><td class="'+cls+'">'+f.label+tag+'</td><td class="'+cls+'">'+f.ev+'</td><td>'+(f.fold||'—')+'</td></tr>';
     }).join('')+'</table>'+
-    '<div class="mini-note">Frequencies, not commandments. Two lines within a few chips of each other are the same decision — mixing between them is what stops you being readable.</div>';
+    '<div class="mini-note">Frequencies, not commandments. Lines marked <b>= same call</b> are inside the error bars of the pick — the same decision in chips, and mixing between them is what stops you being readable.</div>';
   $('coachMathsBody').innerHTML=advice.maths.map(function(m){return '<div class="coach-maths-line">'+m+'</div>';}).join('')+
     '<div class="mini-note">EV figures price the '+contestingOpps().length+' opponent(s) expected to keep going, use your equity against the hands that would actually call, and include a small credit for acting last. The equity tab above is against all '+opps.length+' player(s) still in, so the two differ by a point or two.</div>';
   renderValueBet();
@@ -1214,6 +1216,21 @@ function contestingOpps(){
   const extra=toAct.slice(0,Math.max(0,Math.round(expected)));
   const set=inFor.concat(extra);
   return set.length?set:live.slice(0,1);
+}
+// The prose and the maths must count the same people. contestingOpps() prices
+// EV against those expected to keep going, which can be fewer than the players
+// still in -- so the coach is told both numbers and how many folds sit between
+// them, instead of saying "4 players are still in" over maths priced against 2.
+function fieldBreakdown(){
+  const live=players.filter(function(p){return !p.folded&&!p.isHero;});
+  let expectedFolds=0;
+  if(currentBet>0){
+    const inFor=live.filter(function(p){return p.bet>=currentBet-0.01||p.allIn;});
+    live.forEach(function(o){
+      if(inFor.indexOf(o)<0) expectedFolds+=foldChance(o,Math.max(BB,currentBet),potBefore());
+    });
+  }
+  return {live:live.length,contesting:contestingOpps().length,expectedFolds:expectedFolds};
 }
 // Acting last is worth real money: you see their action before deciding on every
 // later street. A single-street equity number cannot express that, so we credit it

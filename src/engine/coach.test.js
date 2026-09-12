@@ -162,6 +162,66 @@ describe('coach advice', () => {
     expect(text).toContain('fold even one player out');
   });
 
+  test('a small field gets every range named, not just the tightest', () => {
+    const opponents = [
+      { name: 'Marguerite', foldChance: 0.3, rangeTopPct: 22, airPct: 4, styleLabel: 'Nit' },
+      { name: 'Kaz', foldChance: 0.1, rangeTopPct: 55, airPct: 20, styleLabel: 'Maniac' },
+    ];
+    const text = allText(buildCoachAdvice(spot({ opponents, villain: opponents[0] })));
+    expect(text).toContain('Each range you have to get through');
+    expect(text).toContain('Marguerite top 22%');
+    expect(text).toContain('Kaz top 55%, 20% air');
+  });
+
+  test('a big field names the tightest two and says that is what it is doing', () => {
+    const opponents = [
+      { name: 'Marguerite', foldChance: 0.3, rangeTopPct: 18, airPct: 2, styleLabel: 'Nit' },
+      { name: 'Bernard', foldChance: 0.3, rangeTopPct: 30, airPct: 2, styleLabel: 'Nit' },
+      { name: 'Kaz', foldChance: 0.1, rangeTopPct: 55, airPct: 20, styleLabel: 'Maniac' },
+      { name: 'Sofia', foldChance: 0.1, rangeTopPct: 70, airPct: 5, styleLabel: 'Station' },
+    ];
+    const text = allText(buildCoachAdvice(spot({ opponents, villain: opponents[0] })));
+    expect(text).toContain('the two tightest are');
+    expect(text).toContain('Marguerite top 18% and Bernard top 30%');
+    expect(text).toContain('The other 2 are wider');
+    expect(text).toContain('not named here');
+  });
+
+  test('multiway equity is attributed to the combined range, not one player', () => {
+    const opponents = [
+      { name: 'Marguerite', foldChance: 0.3, rangeTopPct: 22, airPct: 4, styleLabel: 'Nit' },
+      { name: 'Kaz', foldChance: 0.1, rangeTopPct: 55, airPct: 20, styleLabel: 'Maniac' },
+    ];
+    const text = allText(buildCoachAdvice(spot({ opponents, villain: opponents[0] })));
+    expect(text).toContain('the combined range of the 2 still in pulls that down');
+    expect(text).not.toContain('of hands Marguerite is repping');
+  });
+
+  test('says how many of the field are expected to fold before it comes back', () => {
+    const opponents = [
+      { name: 'Marguerite', foldChance: 0.3, rangeTopPct: 22, airPct: 4, styleLabel: 'Nit' },
+      { name: 'Kaz', foldChance: 0.1, rangeTopPct: 55, airPct: 20, styleLabel: 'Maniac' },
+      { name: 'Sofia', foldChance: 0.6, rangeTopPct: 70, airPct: 5, styleLabel: 'Station' },
+      { name: 'Bernard', foldChance: 0.6, rangeTopPct: 80, airPct: 5, styleLabel: 'Nit' },
+    ];
+    const text = allText(buildCoachAdvice(spot({
+      opponents, villain: opponents[0], field: { live: 4, contesting: 2, expectedFolds: 1.4 },
+    })));
+    expect(text).toContain('about 1–2 of those still to act should fold');
+    expect(text).toContain('priced against the 2 expected to see it through');
+  });
+
+  test('a negligible number of expected folds is not mentioned at all', () => {
+    const opponents = [
+      { name: 'Marguerite', foldChance: 0.3, rangeTopPct: 22, airPct: 4, styleLabel: 'Nit' },
+      { name: 'Kaz', foldChance: 0.1, rangeTopPct: 55, airPct: 20, styleLabel: 'Maniac' },
+    ];
+    const text = allText(buildCoachAdvice(spot({
+      opponents, villain: opponents[0], field: { live: 2, contesting: 2, expectedFolds: 0.3 },
+    })));
+    expect(text).not.toContain('should fold before it comes back');
+  });
+
   test('does not leak hidden opponent styles', () => {
     const text = allText(buildCoachAdvice(spot()));
     expect(text).not.toMatch(/station|maniac|\bTAG\b|\bLAG\b/i);
@@ -198,6 +258,138 @@ describe('coach advice', () => {
     expect(advice.frequencies.length).toBe(3);
     expect(advice.frequencies[0].ev).toMatch(/^[+-]/);
     expect(advice.maths.join(' ')).toContain('EV(call) = e·P − (1−e)·C');
+  });
+});
+
+describe('confidence spectrum', () => {
+  // 2-7 into a big preflop raise: there is exactly one answer and the coach
+  // should sound like it.
+  test('an obvious fold is stated flatly, with no alternative floated', () => {
+    const fold = { label: 'fold', ev: 0, amount: 0, evSe: 0 };
+    const advice = buildCoachAdvice(spot({
+      streetName: 'Preflop', toCall: 200, pot: 300, rangeEquity: 0.08, rawEquity: 0.1,
+      options: [fold, { label: 'call 200', ev: -160, amount: 200, evSe: 4 }],
+      recommended: fold,
+    }));
+    expect(advice.clarity).toBe('clear');
+    expect(advice.action).toBe('fold');
+    expect(strip(advice.verdict)).toContain('Not close.');
+    expect(strip(advice.verdict)).not.toContain('defensible');
+  });
+
+  test('a comfortable edge is stated as best without overclaiming', () => {
+    const call = { label: 'call 50', ev: 12, amount: 50, evSe: 0 };
+    const advice = buildCoachAdvice(spot({
+      rangeEquity: 0.4, options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, call], recommended: call,
+    }));
+    expect(advice.clarity).toBe('solid');
+    expect(strip(advice.verdict)).toContain('looks best');
+    expect(strip(advice.verdict)).not.toContain('Not close.');
+  });
+
+  test('an edge inside the error bars is called a lean, not a rule', () => {
+    const call = { label: 'call 50', ev: 5, amount: 50, evSe: 0 };
+    const advice = buildCoachAdvice(spot({
+      rangeEquity: 0.3, options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, call], recommended: call,
+    }));
+    expect(advice.clarity).toBe('marginal');
+    expect(strip(advice.verdict)).toContain('A lean, not a rule.');
+    expect(strip(advice.verdict)).toContain('fold');
+  });
+
+  test('a true coin flip is handed over as preference, with the chip cost named', () => {
+    const call = { label: 'call 50', ev: 1, amount: 50, evSe: 0 };
+    const advice = buildCoachAdvice(spot({
+      rangeEquity: 0.3, options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, call], recommended: call,
+    }));
+    expect(advice.clarity).toBe('toss-up');
+    const v = strip(advice.verdict);
+    expect(v).toContain('Genuinely close');
+    expect(v).toContain('fold risks nothing, where call 50 puts 50 at stake');
+    expect(v).toContain('down to preference, not maths');
+  });
+
+  // rankOptions deliberately picks the cheaper option when two error bars
+  // overlap, so the pick can trail on the raw number. Claiming the two "price
+  // out the same" is then contradicted by the two figures printed beside it.
+  test('a pick that trails on raw EV is explained, not called equal', () => {
+    const fold = { label: 'fold', ev: 0, amount: 0, evSe: 0 };
+    const allIn = { label: 'all in 7802', ev: 426, amount: 7802, fold: 0.66, eCalled: 0.05, evSe: 700 };
+    const advice = buildCoachAdvice(spot({
+      toCall: 1792, pot: 4303, rangeEquity: 0.05,
+      options: [fold, allIn], recommended: fold,
+    }));
+    const v = strip(advice.verdict);
+    expect(advice.clarity).toBe('toss-up');
+    expect(v).not.toContain('the same');
+    expect(v).toContain('Fold is the cheaper shot');
+    expect(v).toContain('shows the higher estimate (+0 against +426)');
+    expect(v).toContain('error bar on it is wider than that gap');
+    expect(v).toContain('only if you want the variance');
+  });
+
+  test('a losing option is not marked as the same decision as the pick', () => {
+    const fold = { label: 'fold', ev: 0, amount: 0, evSe: 0 };
+    const bad = { label: 'raise to 4840 (½ pot)', ev: -270, amount: 4840, fold: 0.47, evSe: 90 };
+    const advice = buildCoachAdvice(spot({
+      toCall: 1792, pot: 4303, options: [fold, bad], recommended: fold,
+    }));
+    expect(advice.frequencies.find((f) => f.label === 'raise to 4840 (½ pot)').tied).toBe(false);
+  });
+
+  test('marks options inside the error bars as the same decision', () => {
+    const call = { label: 'call 50', ev: 1, amount: 50, evSe: 0 };
+    const advice = buildCoachAdvice(spot({
+      options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, call], recommended: call,
+    }));
+    expect(advice.frequencies.find((f) => f.label === 'fold').tied).toBe(true);
+  });
+});
+
+describe('fold-equity commentary stays consistent with the verdict', () => {
+  const checkOpt = { label: 'check', ev: 0, amount: 0, evSe: 0 };
+
+  test('a profitable-looking bluff that is not the pick is not sold as profit', () => {
+    const bet = { label: 'bet 120 (¾ pot)', ev: -30, amount: 120, fold: 0.8, eCalled: 0.2, evSe: 0 };
+    const opponents = [{ name: 'Idris', foldChance: 0.8, rangeTopPct: 15, airPct: 2, styleLabel: 'Nit' }];
+    const advice = buildCoachAdvice(spot({
+      toCall: 0, opponents, villain: opponents[0],
+      options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, checkOpt, bet],
+      recommended: checkOpt,
+    }));
+    const text = allText(advice);
+    expect(advice.action).toBe('check');
+    expect(text).not.toContain('profits without your hand ever having to win');
+    expect(text).toContain('is a real option, not a mistake');
+    expect(text).toContain('prices out better here');
+  });
+
+  test('a near-tied bet that is not the pick is offered as a live alternative', () => {
+    const bet = { label: 'bet 120 (¾ pot)', ev: -4, amount: 120, fold: 0.8, eCalled: 0.2, evSe: 0 };
+    const opponents = [{ name: 'Idris', foldChance: 0.8, rangeTopPct: 15, airPct: 2, styleLabel: 'Nit' }];
+    const text = allText(buildCoachAdvice(spot({
+      toCall: 0, opponents, villain: opponents[0],
+      options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, checkOpt, bet],
+      recommended: checkOpt,
+    })));
+    expect(text).toContain('within touching distance');
+    expect(text).toContain('if you would rather have the initiative');
+  });
+
+  test('a recommended bet that cannot win by folds says where its edge is instead', () => {
+    const bet = { label: 'bet 120 (¾ pot)', ev: 26, amount: 120, fold: 0.05, eCalled: 0.62, evSe: 0 };
+    const opponents = [{ name: 'Kaz', foldChance: 0.05, rangeTopPct: 55, airPct: 20, styleLabel: 'Maniac' }];
+    const advice = buildCoachAdvice(spot({
+      toCall: 0, rangeEquity: 0.66, opponents, villain: opponents[0],
+      options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, checkOpt, bet],
+      recommended: bet,
+    }));
+    const text = allText(advice);
+    expect(advice.action).toBe('bet');
+    expect(text).toContain('not being recommended as a bluff');
+    expect(text).toContain('62%');
+    expect(text).not.toContain('a bluff is not advised here');
+    expect(strip(advice.verdict)).toContain('not as a bluff');
   });
 });
 

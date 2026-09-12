@@ -201,6 +201,7 @@ summary:hover{color:var(--cream-dim)}
 .ev-line{font-size:12px;line-height:1.55;color:var(--cream-dim);margin-bottom:4px}
 .ev-line b{font-family:'JetBrains Mono',monospace;color:var(--cream)}
 .ev-pos{color:var(--win);font-weight:700}
+.fq-tied{font-size:10px;color:#55635F;letter-spacing:.02em}
 .ev-neg{color:#D2705C;font-weight:700}
 .ev-miss{background:#241C0E;border:1px solid #4A3A16;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.5;color:#E0B36A;margin-top:9px}
 .ev-good{background:#132A24;border:1px solid #245045;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.5;color:#7FCBB2;margin-top:9px}
