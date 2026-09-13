@@ -47,7 +47,7 @@ test('equity is its own tab, not buried in the coach dropdown', () => {
   expect(screen.getByText(/Range-adjusted/)).toBeInTheDocument();
   expect(screen.getByText(/vs a random hand/)).toBeInTheDocument();
   expect(screen.getByText('How reliable is this?')).toBeInTheDocument();
-  expect(screen.getByText(/The number shown is an estimate, not a certainty/)).toBeInTheDocument();
+  expect(screen.getByText(/treat a couple of points either way as the same answer/)).toBeInTheDocument();
 });
 
 test('the ring is a progress track that starts empty', () => {

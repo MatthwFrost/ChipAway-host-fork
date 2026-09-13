@@ -45,10 +45,9 @@ export function EquityPanel() {
         <summary>How reliable is this?</summary>
         <div className="coach-disc-body">
           <p>
-            Equity is estimated by dealing the rest of the hand out thousands of times and counting how
-            often you win. The number shown is an estimate, not a certainty. More runouts mean less
-            uncertainty but take longer to work out, so the figure carries a margin of error — treat a
-            couple of points either way as noise.
+            This number comes from dealing the rest of the hand out thousands of times and counting how
+            often you end up winning. Play it out more times and the figure settles down, but it never
+            lands on one exact number — so treat a couple of points either way as the same answer.
           </p>
           <div id="eqReliabilityBody" />
         </div>

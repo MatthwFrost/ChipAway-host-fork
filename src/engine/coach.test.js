@@ -10,7 +10,7 @@ import {
 } from './coach';
 
 const strip = (s) => s.replace(/<[^>]+>/g, '');
-const allText = (a) => strip([a.verdict, ...a.lines, ...a.maths].join(' '));
+const allText = (a) => strip([a.verdict, a.reason, ...a.points, ...a.lines, ...a.maths].join(' '));
 
 describe('formatting', () => {
   test('equity is reported as whole percentages', () => {
@@ -238,9 +238,30 @@ describe('coach advice', () => {
       .toBe("Sofia's station range");
   });
 
-  test('flags a borderline call whose margin is inside the error bar', () => {
+  test('flags a borderline call in plain language, with no talk of error bars', () => {
     const text = allText(buildCoachAdvice(spot({ rangeEquity: 0.26, equitySe: 0.02 })));
-    expect(text).toContain('genuinely close rather than clear-cut');
+    expect(text).toContain('could fall either way on the day');
+    expect(text).toContain('close call rather than a clear one');
+  });
+
+  // Uncertainty should read as a judgement about people and cards, never as the
+  // model reporting on its own reliability.
+  test('never uses statistical jargon in anything shown up front', () => {
+    const jargon = /margin of error|error bar|confidence|standard error|Monte Carlo|estimate|variance|statistical/i;
+    const spots = [
+      spot(),
+      spot({ rangeEquity: 0.26, equitySe: 0.02 }),
+      spot({ degradedShare: 0.14 }),
+      spot({
+        options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 },
+          { label: 'call 50', ev: 1, amount: 50, evSe: 0 }],
+        recommended: { label: 'call 50', ev: 1, amount: 50, evSe: 0 },
+      }),
+    ];
+    spots.forEach((s) => {
+      const a = buildCoachAdvice(s);
+      expect(strip([a.verdict, a.reason, ...a.points].join(' '))).not.toMatch(jargon);
+    });
   });
 
   test('a check is never presented as a fold', () => {
@@ -273,8 +294,8 @@ describe('confidence spectrum', () => {
     }));
     expect(advice.clarity).toBe('clear');
     expect(advice.action).toBe('fold');
-    expect(strip(advice.verdict)).toContain('Not close.');
-    expect(strip(advice.verdict)).not.toContain('defensible');
+    expect(strip(advice.verdict)).toBe('Fold.');
+    expect(strip(advice.reason)).toBe('You hold 8% where the price needs 40%.');
   });
 
   test('a comfortable edge is stated as best without overclaiming', () => {
@@ -283,30 +304,31 @@ describe('confidence spectrum', () => {
       rangeEquity: 0.4, options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, call], recommended: call,
     }));
     expect(advice.clarity).toBe('solid');
-    expect(strip(advice.verdict)).toContain('looks best');
-    expect(strip(advice.verdict)).not.toContain('Not close.');
+    expect(strip(advice.verdict)).toBe('Call 50.');
   });
 
-  test('an edge inside the error bars is called a lean, not a rule', () => {
-    const call = { label: 'call 50', ev: 5, amount: 50, evSe: 0 };
+  test('a close one names the runner-up as also playable, briefly', () => {
+    const check = { label: 'check', ev: 0, amount: 0, evSe: 0 };
+    const bet = { label: 'bet 91 (⅓ pot)', ev: 4, amount: 91, fold: 0.5, eCalled: 0.4, evSe: 0 };
     const advice = buildCoachAdvice(spot({
-      rangeEquity: 0.3, options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, call], recommended: call,
+      toCall: 0, rangeEquity: 0.4,
+      options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, check, bet], recommended: bet,
     }));
     expect(advice.clarity).toBe('marginal');
-    expect(strip(advice.verdict)).toContain('A lean, not a rule.');
-    expect(strip(advice.verdict)).toContain('fold');
+    expect(strip(advice.verdict)).toBe('Bet 91 (⅓ pot), just — but check also looks positive.');
   });
 
-  test('a true coin flip is handed over as preference, with the chip cost named', () => {
+  test('a true coin flip is handed over as preference, with the trade-off named', () => {
     const call = { label: 'call 50', ev: 1, amount: 50, evSe: 0 };
     const advice = buildCoachAdvice(spot({
       rangeEquity: 0.3, options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, call], recommended: call,
     }));
     expect(advice.clarity).toBe('toss-up');
-    const v = strip(advice.verdict);
-    expect(v).toContain('Genuinely close');
-    expect(v).toContain('fold risks nothing, where call 50 puts 50 at stake');
-    expect(v).toContain('down to preference, not maths');
+    expect(strip(advice.verdict)).toBe('Call 50 or fold — your call.');
+    const r = strip(advice.reason);
+    expect(r).toContain('Both rate about the same here (+1 against +0)');
+    expect(r).toContain('fold risks nothing, where call 50 puts 50 at stake');
+    expect(r).toContain('folding costs you nothing');
   });
 
   // rankOptions deliberately picks the cheaper option when two error bars
@@ -319,13 +341,30 @@ describe('confidence spectrum', () => {
       toCall: 1792, pot: 4303, rangeEquity: 0.05,
       options: [fold, allIn], recommended: fold,
     }));
-    const v = strip(advice.verdict);
     expect(advice.clarity).toBe('toss-up');
-    expect(v).not.toContain('the same');
-    expect(v).toContain('Fold is the cheaper shot');
-    expect(v).toContain('shows the higher estimate (+0 against +426)');
-    expect(v).toContain('error bar on it is wider than that gap');
-    expect(v).toContain('only if you want the variance');
+    expect(strip(advice.verdict)).toBe('Fold — the safer play.');
+    const r = strip(advice.reason);
+    expect(r).toContain('all in 7802 rates higher on paper (+426)');
+    expect(r).toContain('leans on them folding, which is the hardest thing to call');
+    expect(r).toContain('fancy the gamble');
+    expect(r).not.toMatch(/error|estimate|variance/i);
+  });
+
+  // A call does not depend on anyone folding, so it cannot be passed over for
+  // that reason — and the price sentence is dropped here because it would read
+  // as a contradiction of the fold sitting above it.
+  test('a higher-rated call is passed over for the right reason', () => {
+    const fold = { label: 'fold', ev: 0, amount: 0, evSe: 0 };
+    const call = { label: 'call 551', ev: 56, amount: 551, evSe: 120 };
+    const advice = buildCoachAdvice(spot({
+      toCall: 551, pot: 3200, rangeEquity: 0.16, decisionEquity: 0.16,
+      options: [fold, call], recommended: fold,
+    }));
+    const r = strip(advice.reason);
+    expect(strip(advice.verdict)).toBe('Fold — the safer play.');
+    expect(r).toContain('thin enough to disappear if your read is even slightly off');
+    expect(r).not.toContain('leans on them folding');
+    expect(r).not.toContain('where the price needs');
   });
 
   test('a losing option is not marked as the same decision as the pick', () => {
@@ -372,7 +411,7 @@ describe('fold-equity commentary stays consistent with the verdict', () => {
       options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, checkOpt, bet],
       recommended: checkOpt,
     })));
-    expect(text).toContain('within touching distance');
+    expect(text).toContain('it rates about the same as check');
     expect(text).toContain('if you would rather have the initiative');
   });
 
@@ -387,9 +426,74 @@ describe('fold-equity commentary stays consistent with the verdict', () => {
     const text = allText(advice);
     expect(advice.action).toBe('bet');
     expect(text).toContain('not being recommended as a bluff');
-    expect(text).toContain('62%');
     expect(text).not.toContain('a bluff is not advised here');
-    expect(strip(advice.verdict)).toContain('not as a bluff');
+    expect(strip(advice.reason)).toBe('It works even when they call: you hold 62% against the hands that continue.');
+  });
+
+  test('a bet carried by fold equity says so, as the headline reason', () => {
+    // 20% when called is not enough on its own: with no folds the bet loses, so
+    // fold equity is what makes it work and that is what leads.
+    const bet = { label: 'bet 120 (¾ pot)', ev: 44, amount: 120, fold: 0.8, eCalled: 0.2, evSe: 0 };
+    const opponents = [{ name: 'Idris', foldChance: 0.8, rangeTopPct: 15, airPct: 2, styleLabel: 'Nit' }];
+    const advice = buildCoachAdvice(spot({
+      toCall: 0, opponents, villain: opponents[0],
+      options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, checkOpt, bet], recommended: bet,
+    }));
+    expect(strip(advice.reason)).toBe('It works because they fold about 80% of the time here, and this size only needs 44% to pay for itself.');
+  });
+});
+
+describe('quick points', () => {
+  test('are capped at two, and lead with what you are holding', () => {
+    const opponents = [
+      { name: 'Marguerite', foldChance: 0.3, rangeTopPct: 22, airPct: 4, styleLabel: 'Nit' },
+      { name: 'Kaz', foldChance: 0.1, rangeTopPct: 55, airPct: 42, styleLabel: 'Maniac' },
+      { name: 'Sofia', foldChance: 0.5, rangeTopPct: 70, airPct: 5, styleLabel: 'Station' },
+    ];
+    const advice = buildCoachAdvice(spot({
+      opponents, villain: opponents[0], blockerPct: 40, degradedShare: 0.2,
+      field: { live: 3, contesting: 2, expectedFolds: 1.2 },
+      shape: {
+        isDrawing: true, madeCategory: 0, usesHoleCards: false, outs: 9,
+        equityFromOuts: 0.35, cardsToCome: 2, description: 'a flush draw',
+      },
+    }));
+    expect(advice.points.length).toBe(2);
+    expect(strip(advice.points[0])).toBe('9 outs — about 35% to get there by the river');
+    expect(strip(advice.points[1])).toContain('3-way — you have to beat all of them');
+    expect(strip(advice.points[1])).toContain('about 1–2 should fold');
+  });
+
+  test('stay empty when nothing extra is doing any work', () => {
+    const opponents = [{ name: 'Sofia', foldChance: 0.4, rangeTopPct: 60, airPct: 5, styleLabel: 'TAG' }];
+    const advice = buildCoachAdvice(spot({ opponents, villain: opponents[0] }));
+    expect(advice.points).toEqual([]);
+  });
+
+  test('flag a table that will not fold, when that is the live fact', () => {
+    const opponents = [{ name: 'Kaz', foldChance: 0.04, rangeTopPct: 55, airPct: 20, styleLabel: 'Maniac' }];
+    const advice = buildCoachAdvice(spot({ opponents, villain: opponents[0] }));
+    expect(advice.points.join(' ')).toContain('nobody here folds much');
+  });
+});
+
+describe('position as the deciding factor', () => {
+  test('is promoted into the reason when removing it flips the pick', () => {
+    const call = { label: 'call 50', ev: 6, amount: 50, evSe: 0 };
+    const advice = buildCoachAdvice(spot({
+      rangeEquity: 0.28, options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, call], recommended: call,
+      position: { name: 'BTN', actsLast: true, preflop: false, credit: 0.035 },
+    }));
+    expect(strip(advice.reason)).toContain('Acting last from here is what tips it');
+  });
+
+  test('is left out of the reason when it changes nothing', () => {
+    const call = { label: 'call 50', ev: 40, amount: 50, evSe: 0 };
+    const advice = buildCoachAdvice(spot({
+      rangeEquity: 0.55, options: [{ label: 'fold', ev: 0, amount: 0, evSe: 0 }, call], recommended: call,
+      position: { name: 'BTN', actsLast: true, preflop: false, credit: 0.035 },
+    }));
+    expect(strip(advice.reason)).not.toContain('Acting last');
   });
 });
 

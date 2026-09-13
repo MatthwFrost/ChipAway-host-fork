@@ -220,8 +220,19 @@ svg.spark{width:100%;height:52px;display:block;overflow:visible}
 @media (max-width:620px){.table-outer{aspect-ratio:auto;height:560px;padding:10px}.seat{width:100px}.card{width:34px;height:48px}.card .rank{font-size:12px}.card .pip{font-size:14px}}
 
 /* ---- coach panel (Tasks 4–6) ---- */
-.coach-verdict{font-family:'Fraunces',Georgia,serif;font-size:15.5px;font-weight:600;line-height:1.4;color:var(--brass);margin-bottom:9px}
+.coach-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:6px}
+.coach-verdict{font-family:'Fraunces',Georgia,serif;font-size:15.5px;font-weight:600;line-height:1.4;color:var(--brass);flex:1;min-width:0}
 .coach-verdict b{color:var(--cream)}
+.coach-conf{font-size:9px;letter-spacing:.13em;text-transform:uppercase;padding:2px 7px;border-radius:99px;white-space:nowrap;border:1px solid currentColor;opacity:.85}
+.conf-clear{color:var(--win)}
+.conf-solid{color:#7FA8CB}
+.conf-marginal{color:#E0B36A}
+.conf-tossup{color:#B89AC7}
+.coach-reason{font-size:13px;line-height:1.6;color:var(--cream);margin-bottom:8px}
+.coach-reason b{font-family:'JetBrains Mono',monospace;color:var(--brass)}
+.coach-points{list-style:none;margin:0 0 4px;padding:0;display:flex;flex-direction:column;gap:4px}
+.coach-points li{font-size:11.5px;line-height:1.5;color:var(--cream-dim);padding-left:13px;position:relative}
+.coach-points li:before{content:'';position:absolute;left:3px;top:7px;width:3px;height:3px;border-radius:50%;background:var(--brass);opacity:.7}
 .coach-lines p{font-size:12.5px;line-height:1.6;color:var(--cream-dim);margin-bottom:7px}
 .coach-lines p:last-child{margin-bottom:0}
 .coach-lines b{color:var(--cream);font-family:'JetBrains Mono',monospace}

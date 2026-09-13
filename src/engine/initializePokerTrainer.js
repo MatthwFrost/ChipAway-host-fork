@@ -370,11 +370,11 @@ function renderEquityTab(force){
   $('kLose').textContent='lose '+Math.round(eqR.lose)+'%';
 
   const degradedNote=eqR.degradedShare>0.02
-    ? ' Range sampling degraded to random hands on '+Math.round(100*eqR.degradedShare)+'% of runouts here, because your cards block so much of their narrow range — treat the range figure loosely.'
+    ? ' You are holding so many of the cards they would need for a strong hand that some of these run-throughs had to fall back on random cards — so take this one as a rough read rather than a precise figure.'
     : '';
-  $('eqReliabilityBody').innerHTML='<p>This spot ran <b>'+HERO_TRIALS+'</b> runouts against their ranges and <b>'+rawTrials+
-    '</b> against random hands.'+(ci===null?'':' Range-adjusted equity is <b>'+adjPct+'% ±'+ci+
-    '</b> points at 95% confidence, so the true figure is very likely between <b>'+Math.max(0,adjPct-ci)+'%</b> and <b>'+
+  $('eqReliabilityBody').innerHTML='<p>This spot played the hand out <b>'+HERO_TRIALS+'</b> times against the hands they are likely to hold, and <b>'+rawTrials+
+    '</b> times against random cards.'+(ci===null?'':' That puts you around <b>'+adjPct+'%</b>, give or take '+ci+
+    ' points — realistically somewhere between <b>'+Math.max(0,adjPct-ci)+'%</b> and <b>'+
     Math.min(100,adjPct+ci)+'%</b>.')+degradedNote+'</p>';
 }
 function clearEquityTab(){
@@ -413,7 +413,11 @@ function showCoach(){
   const hero=players[0];
   if(!handLive||hero.folded||!hero.hole.length) return;
   renderEquityTab();
-  if(!lastEq){ $('coachVerdict').textContent='Equity is temporarily unavailable in this spot.'; $('coachLines').innerHTML=''; }
+  if(!lastEq){
+    $('coachVerdict').textContent='Equity is temporarily unavailable in this spot.';
+    ['coachLines','coachReason','coachPoints'].forEach(function(id){$(id).innerHTML='';});
+    $('coachConf').textContent='';
+  }
   $('eqHidden').style.display='none';
   $('eqBody').classList.add('open');
   if(!lastEq) return;
@@ -450,6 +454,7 @@ function showCoach(){
     pot:P,
     rawEquity:eqU.equity/100,
     rangeEquity:eqR.equity/100,
+    decisionEquity:spot.equity,
     equitySe:eqR.se,
     degradedShare:eqR.degradedShare,
     trials:HERO_TRIALS,
@@ -459,10 +464,16 @@ function showCoach(){
     revealStyles:showProfiles,
     villain:oppInfo[opps.indexOf(main)],
     field:fieldBreakdown(),
+    blockerPct:blk,
     shape:heroShape(),
-    position:{name:posName(0),actsLast:heroActsLast(),preflop:street===0}
+    position:{name:posName(0),actsLast:heroActsLast(),preflop:street===0,credit:positionalCredit()}
   });
+  const CONF={'clear':'clear','solid':'best of the options','marginal':'close','toss-up':'your call'};
   $('coachVerdict').innerHTML=advice.verdict;
+  $('coachConf').textContent=CONF[advice.clarity]||'';
+  $('coachConf').className='coach-conf conf-'+advice.clarity.replace('-','');
+  $('coachReason').innerHTML=advice.reason;
+  $('coachPoints').innerHTML=advice.points.map(function(p){return '<li>'+p+'</li>';}).join('');
   $('coachLines').innerHTML=advice.lines.map(function(l){return '<p>'+l+'</p>';}).join('');
   $('coachFreqBody').innerHTML='<table class="val-tab"><tr><th>action</th><th>EV</th><th>they fold</th></tr>'+
     advice.frequencies.map(function(f){
@@ -470,7 +481,7 @@ function showCoach(){
       const tag=f.recommended?' ← pick':(f.tied?' <span class="fq-tied">= same call</span>':'');
       return '<tr><td class="'+cls+'">'+f.label+tag+'</td><td class="'+cls+'">'+f.ev+'</td><td>'+(f.fold||'—')+'</td></tr>';
     }).join('')+'</table>'+
-    '<div class="mini-note">Frequencies, not commandments. Lines marked <b>= same call</b> are inside the error bars of the pick — the same decision in chips, and mixing between them is what stops you being readable.</div>';
+    '<div class="mini-note">Frequencies, not commandments. Lines marked <b>= same call</b> rate about the same as the pick — the same decision in chips, and mixing between them is what stops you being readable.</div>';
   $('coachMathsBody').innerHTML=advice.maths.map(function(m){return '<div class="coach-maths-line">'+m+'</div>';}).join('')+
     '<div class="mini-note">EV figures price the '+contestingOpps().length+' opponent(s) expected to keep going, use your equity against the hands that would actually call, and include a small credit for acting last. The equity tab above is against all '+opps.length+' player(s) still in, so the two differ by a point or two.</div>';
   renderValueBet();

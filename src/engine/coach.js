@@ -255,13 +255,14 @@ export function decisionClarity(options, recommended, pot) {
   const opts = options || [];
   if (!recommended || opts.length < 2) return { level: 'clear', alt: null, gap: 0 };
   const fam = actionFamily(recommended.label);
+  // Checking weakly dominates folding — you can always fold later, for free — so
+  // whenever a check is on offer, folding is never the meaningful runner-up,
+  // even though the two price at exactly 0.
+  const canCheck = opts.some(function (o) { return actionFamily(o.label) === 'check'; });
   let alt = null;
   opts.forEach(function (o) {
     if (o === recommended || actionFamily(o.label) === fam) return;
-    // Checking weakly dominates folding — you can always fold later, for free —
-    // so a free check is never a genuine toss-up against a fold, even though
-    // both price at exactly 0.
-    if (fam === 'check' && actionFamily(o.label) === 'fold') return;
+    if (canCheck && actionFamily(o.label) === 'fold') return;
     if (!alt || o.ev > alt.ev) alt = o;
   });
   if (!alt) return { level: 'clear', alt: null, gap: 0 };
@@ -288,6 +289,139 @@ export function riskNote(rec, alt) {
       b(chips(dearer.amount || 0)) + ' at stake';
   }
   return b(cheaper.label) + ' risks ' + b(chips(Math.abs(c - a))) + ' fewer chips than ' + b(dearer.label);
+}
+
+/* ---- picking the one thing worth saying first ---- */
+
+// Would this bet still be the best line if they never folded at all? If not,
+// fold equity is what is carrying it, and that is the fact worth leading with.
+// Closed form, so it costs nothing: no second simulation.
+export function foldEquityDecisive(spot, rec, alt) {
+  if (!rec || rec.fold === undefined) return false;
+  if (rec.eCalled === undefined || rec.eCalled === null) return rec.fold >= 0.25;
+  const P = spot.pot, B = rec.amount, e = rec.eCalled;
+  const evIfTheyNeverFolded = e * (P + B) - (1 - e) * B;
+  return evIfTheyNeverFolded < (alt ? alt.ev : 0);
+}
+
+// Acting last is credited explicitly in the equity the options were priced on,
+// so its contribution can be subtracted back out exactly: if taking it away
+// flips the pick, position is the reason this works and deserves saying.
+export function positionDecisive(spot, rec, alt) {
+  const credit = spot.position ? spot.position.credit : 0;
+  if (!credit || credit <= 0 || !rec) return false;
+  // Only calls and bets are priced off equity, so only they carry the credit.
+  // A check is fixed at 0 either way, and subtracting a credit it never had
+  // would credit position for something it did not do.
+  if (actionFamily(rec.label) !== 'call') return false;
+  const swing = credit * (spot.pot + (spot.toCall || 0));
+  return (rec.ev - swing) < (alt ? alt.ev : 0);
+}
+
+// Why the better-rated line was passed over. A bet and a call are passed over
+// for different reasons, and saying "it leans on them folding" about a call is
+// simply wrong.
+function whyPassedOver(alt) {
+  const family = alt ? actionFamily(alt.label) : 'aggro';
+  if (family === 'aggro') return 'that leans on them folding, which is the hardest thing to call';
+  if (family === 'call') return 'that edge is thin enough to disappear if your read is even slightly off';
+  return 'that edge is too thin to count on';
+}
+
+// Why a different line still has something going for it, in one clause.
+function meritClause(opt) {
+  if (!opt) return null;
+  const family = actionFamily(opt.label);
+  if (family === 'aggro') return 'a bet can win it outright when they fold';
+  if (family === 'call') return 'calling keeps their bluffs in';
+  if (family === 'check') return 'checking keeps the pot small';
+  return 'folding costs you nothing';
+}
+
+// The single sentence that says why this is the answer. Everything else is
+// context and belongs behind the fold.
+export function decisionReason(spot, rec, alt) {
+  const C = spot.toCall, P = spot.pot;
+  const family = rec ? actionFamily(rec.label) : 'fold';
+  // The figure quoted must be the one the decision was actually made on. The
+  // headline equity number is against everyone still in; the options were
+  // priced against those expected to keep going, plus the credit for acting
+  // last. Quoting the first would print "you hold 4% where the price needs 8%"
+  // above a recommendation to call.
+  const eUsed = (spot.decisionEquity === null || spot.decisionEquity === undefined)
+    ? spot.rangeEquity : spot.decisionEquity;
+  const adj = pctWhole(eUsed);
+  const reqPct = pctWhole(requiredEquity(C, P));
+  const price = 'You hold ' + b(adj + '%') + ' where the price needs ' + b(reqPct + '%') + '.';
+
+  if (family === 'aggro' && rec.fold !== undefined) {
+    const gets = pctWhole(rec.fold);
+    const need = pctWhole(breakEvenFold(rec.amount, P));
+    const eC = pctWhole(rec.eCalled);
+    if (foldEquityDecisive(spot, rec, alt)) {
+      return 'It works because they fold about ' + b(gets + '%') + ' of the time here, and this size ' +
+        (gets - need >= 5 ? 'only needs ' : 'needs ') + b(need + '%') + ' to pay for itself.';
+    }
+    if (eC === null) return 'It wins the pot often enough from here to be worth the chips.';
+    if (rec.amount < P * 0.25) {
+      return 'It only costs ' + b(chips(rec.amount)) + ' into a pot of ' + b(chips(P)) +
+        ' — cheap enough to be worth it on ' + b(eC + '%') + ' when they call.';
+    }
+    return 'It works even when they call: you hold ' + b(eC + '%') + ' against the hands that continue' +
+      (gets >= 15 ? ', and they fold about ' + b(gets + '%') + ' of the time on top of that' : '') + '.';
+  }
+  const positional = positionDecisive(spot, rec, alt)
+    ? ' Acting last from here is what tips it — out of position this is a fold.'
+    : '';
+  if (family === 'call') return price + positional;
+  if (family === 'fold') return C > 0 ? price : 'Nothing here is worth putting chips in for.';
+  return 'Nothing to call, so the next card is free.' + positional;
+}
+
+// At most two extra facts, each shown only when it is doing real work in this
+// spot. Order is by how often the fact changes the decision.
+export function quickPoints(spot, ctx) {
+  const opps = spot.opponents || [];
+  const shape = spot.shape;
+  const field = spot.field;
+  const candidates = [];
+
+  if (shape) {
+    if (shape.isDrawing && !ctx.reasonHasOuts) {
+      candidates.push(shape.outs + ' outs — about ' + pctWhole(shape.equityFromOuts) + '% to get there by the river');
+    } else if (shape.bricked) {
+      candidates.push('your draw missed, so there is nothing to show down');
+    } else if (shape.madeCategory === 1 && !shape.isDrawing) {
+      candidates.push('a bluff-catcher: this hangs on how often they bluff, not on your pair');
+    }
+  }
+  // Heads-up is the default mental model, so "2-way" is not news. A crowded pot
+  // is, and so is a field that is about to thin out.
+  const expected = field ? foldsExpectedPhrase(field.expectedFolds) : null;
+  if (opps.length >= 3 || (opps.length >= 2 && expected)) {
+    candidates.push(opps.length + '-way — you have to beat all of them' +
+      (expected ? ', though about ' + expected + ' should fold before it gets back to you' : ''));
+  }
+  const tight = opps.filter(function (o) {
+    return o.rangeTopPct !== null && o.rangeTopPct !== undefined && o.rangeTopPct <= 25;
+  });
+  if (tight.length === 1) {
+    candidates.push(tight[0].name + ' is repping the top ' + Math.round(tight[0].rangeTopPct) + '% of hands');
+  }
+  const airy = opps.filter(function (o) { return o.airPct >= 25; });
+  if (airy.length === 1) {
+    candidates.push(airy[0].name + ' has plenty of air in that range — roughly ' + Math.round(airy[0].airPct) + '%');
+  }
+  if (opps.length && ctx.jointFold < 0.12) {
+    candidates.push('nobody here folds much, so a bluff has nowhere to go');
+  }
+  if (spot.blockerPct >= 25 && ctx.mainName) {
+    candidates.push('your cards block about ' + Math.round(spot.blockerPct) + '% of ' + ctx.mainName + "'s strong hands");
+  }
+  if (spot.degradedShare > 0.02) {
+    candidates.push('you hold so many of their likely cards that this read is a rough one');
+  }
+  return candidates.slice(0, 2);
 }
 
 /* ---- the coach ---- */
@@ -349,8 +483,7 @@ export function buildCoachAdvice(spot) {
       lines.push('That is within a couple of points of the price — this call is close to break-even either way.');
     }
     if (borderline) {
-      lines.push('The equity estimate carries about ' + b('±' + ci + ' points') +
-        ', which is wider than the margin, so treat this one as genuinely close rather than clear-cut.');
+      lines.push('That gap is thin enough that it could fall either way on the day — treat this as a close call rather than a clear one.');
     }
   }
 
@@ -421,11 +554,11 @@ export function buildCoachAdvice(spot) {
       const head = 'A bet of ' + b(chips(bestAggro.amount)) + ' would fold the field about ' + b(gets + '%') +
         ' of the time against the ' + b(need + '%') + ' it needs, so it is a real option, not a mistake';
       if (bestAggro.ev > rec.ev) {
-        lines.push(head + ' — it even shows the higher estimate' + versus + ', but the fold rate behind that ' +
-          'number is a heuristic rather than a measurement, and it is extrapolated furthest at exactly this size. ' +
+        lines.push(head + ' — it even rates higher on paper' + versus + '. That rating rests on how often they ' +
+          'give up, though, which is the hardest thing to judge about anyone, and a bet this size leans on it hardest. ' +
           b(rec.label) + ' gets to the same place for fewer chips.');
       } else if (clarity.level === 'toss-up' || clarity.level === 'marginal') {
-        lines.push(head + ' — it is within touching distance of ' + b(rec.label) + versus +
+        lines.push(head + ' — it rates about the same as ' + b(rec.label) + versus +
           ', so take it if you would rather have the initiative.');
       } else {
         lines.push(head + ' — but ' + b(rec.label) + ' prices out better here' + versus + '.');
@@ -445,54 +578,39 @@ export function buildCoachAdvice(spot) {
   const posLine = positionLine(spot.position);
   if (posLine) lines.push(posLine);
 
-  /* 6. verdict — pitched at the confidence the numbers actually support */
+  /* 6. verdict — short, and pitched at how clear-cut this actually is. The
+     "why" lives in reason, the caveats in points, the full case in lines. */
   const label = rec ? rec.label : 'fold';
   const fam = rec ? actionFamily(label) : 'fold';
   const action = fam === 'aggro' ? 'bet' : fam;
   const headline = b(label.charAt(0).toUpperCase() + label.slice(1));
-  let core;
-  if (fam === 'check') {
-    core = spot.streetName === 'River'
-      ? 'you get to see it through without paying for the privilege'
-      : 'you keep the pot small and see the next card for nothing';
-  } else if (fam === 'call') {
-    core = 'your equity clears the price' +
-      (bestAggro ? ', and raising folds out too much of what you already beat' : '');
-  } else if (fam === 'aggro') {
-    core = (bestAggro && pctWhole(bestAggro.fold) >= pctWhole(breakEvenFold(bestAggro.amount, P)))
-      ? 'it wins two ways, when they fold and when you have the better hand'
-      : 'not as a bluff, but because you are in good shape when they call';
-  } else {
-    core = C > 0 ? 'nothing here prices in' : 'nothing here is worth committing chips to';
-  }
+  const reason = decisionReason(spot, rec, clarity.alt);
 
   let verdict;
-  if (clarity.level === 'clear') {
-    verdict = headline + ' — ' + core + '. Not close.';
-  } else if (clarity.level === 'solid') {
-    verdict = headline + ' looks best — ' + core + '.';
+  let extra = null;
+  if (clarity.level === 'clear' || clarity.level === 'solid') {
+    verdict = headline + '.';
   } else if (clarity.level === 'marginal') {
-    verdict = headline + ', just — ' + core + ', but ' + b(clarity.alt.label) +
-      ' is inside the margin of error of it. A lean, not a rule.';
-  } else {
+    verdict = headline + ', just — but ' + b(clarity.alt.label) +
+      (actionFamily(clarity.alt.label) === 'fold'
+        ? ' gives up very little here.'
+        : ' also looks positive.');
+  } else if (clarity.gap < 0) {
+    // The pick trails on the raw number and was taken as the cheaper shot. Say
+    // that in poker terms — a fold rate is a guess about a person, not a
+    // shortcoming of the arithmetic.
+    verdict = headline + ' — the safer play.';
     const risk = riskNote(rec, clarity.alt);
-    const pair = ' (' + b(signed(rec.ev)) + ' against ' + b(signed(clarity.alt.ev)) + ')';
-    if (clarity.gap < 0) {
-      // The pick trails on the point estimate and was taken as the cheaper shot
-      // at a statistically indistinguishable price. Saying "the same" here would
-      // be contradicted by the two numbers right next to it.
-      verdict = headline + ' is the cheaper shot. ' + b(clarity.alt.label) +
-        ' shows the higher estimate' + pair + ', but ' +
-        (Math.abs(clarity.gap) <= clarity.material
-          ? 'the error bar on it is wider than that gap, so it is not a reliable edge'
-          : 'it stakes far more to get there') +
-        '.' + (risk ? ' ' + risk + '.' : '') + ' Take it only if you want the variance.';
-    } else {
-      verdict = 'Genuinely close: ' + headline + ' and ' + b(clarity.alt.label) +
-        " are inside each other's margin of error" + pair + '.' +
-        (risk ? ' ' + risk + '.' : '') +
-        ' Either is defensible — this one is down to preference, not maths.';
-    }
+    extra = b(clarity.alt.label) + ' rates higher on paper (' + b(signed(clarity.alt.ev)) +
+      '), but ' + whyPassedOver(clarity.alt) +
+      (risk ? ', and ' + risk : '') + '. Take it only if you fancy the gamble.';
+  } else {
+    verdict = headline + ' or ' + b(clarity.alt.label) + ' — your call.';
+    const risk = riskNote(rec, clarity.alt);
+    const merit = meritClause(clarity.alt);
+    extra = 'Both rate about the same here (' + b(signed(rec.ev)) + ' against ' +
+      b(signed(clarity.alt.ev)) + ').' + (risk ? ' ' + risk + ',' : '') +
+      (merit ? ' but ' + merit + '.' : '');
   }
 
   /* layer 2: frequencies */
@@ -528,14 +646,27 @@ export function buildCoachAdvice(spot) {
       pctWhole(breakEvenFold(bestAggro.amount, P)) + '%.');
   }
   if (adj !== null) {
-    maths.push('Range-adjusted equity ' + adj + '%' + (ci === null ? '' : ' ±' + ci + ' points at 95% confidence') +
+    maths.push('Range-adjusted equity ' + adj + '%' + (ci === null ? '' : ', give or take ' + ci + ' points') +
       (spot.trials ? ', from ' + spot.trials + ' simulated runouts.' : '.'));
   }
+
+  const points = quickPoints(spot, {
+    jointFold: jointFoldChance,
+    mainName: spot.villain ? spot.villain.name : null,
+    reasonHasOuts: /outs/.test(reason),
+  });
+
+  // When the pick trails on the raw number, the price sentence can read as a
+  // flat contradiction of it ("you hold 16% where the price needs 14%" over a
+  // fold). The trade-off sentence says everything that matters there.
+  const trailing = clarity.level === 'toss-up' && clarity.gap < 0;
 
   return {
     action: action,
     clarity: clarity.level,
     verdict: verdict,
+    reason: trailing ? extra : (extra ? reason + ' ' + extra : reason),
+    points: points,
     lines: lines,
     frequencies: frequencies,
     maths: maths,
