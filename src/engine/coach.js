@@ -67,6 +67,14 @@ export function foldinessWord(f) {
   return 'almost never folds';
 }
 
+// The same read with a plural subject, for "two of the players left ...".
+export function foldinessWordPlural(f) {
+  if (f >= 0.55) return 'fold a lot';
+  if (f >= 0.35) return 'fold often enough to bluff';
+  if (f >= 0.18) return 'do not fold easily';
+  return 'almost never fold';
+}
+
 export function describeVillain(v, revealStyles) {
   if (!v) return 'their range';
   if (revealStyles && v.styleLabel) {
@@ -80,6 +88,48 @@ export function describeVillain(v, revealStyles) {
   return 'the top ' + b(Math.round(v.rangeTopPct) + '%') + ' of hands ' + v.name + ' is repping';
 }
 
+// One opponent's implied range, in a clause that slots into a list.
+function oppRangePhrase(o, revealStyles) {
+  const style = (revealStyles && o.styleLabel) ? ' (' + o.styleLabel + ')' : '';
+  if (o.rangeTopPct === null || o.rangeTopPct === undefined || o.rangeTopPct >= 92) {
+    return b(o.name) + style + ' has shown nothing yet';
+  }
+  const air = (o.airPct >= 3) ? ', ' + Math.round(o.airPct) + '% air' : '';
+  return b(o.name) + style + ' top ' + Math.round(o.rangeTopPct) + '%' + air;
+}
+
+// Equity is computed against everyone still in, so the prose must not quietly
+// describe the tightest player as if they were the table. Two regimes: a small
+// field gets every range named, because three is still readable; a big field
+// gets the tightest two named and SAYS that is what it is doing, so a loose
+// player is never silently dropped from the story.
+export function rangeAttribution(opponents, revealStyles) {
+  const opps = opponents || [];
+  if (opps.length < 2) return null;
+  const sorted = opps.slice().sort(function (x, y) {
+    return (x.rangeTopPct === null || x.rangeTopPct === undefined ? 100 : x.rangeTopPct) -
+      (y.rangeTopPct === null || y.rangeTopPct === undefined ? 100 : y.rangeTopPct);
+  });
+  const phrase = function (o) { return oppRangePhrase(o, revealStyles); };
+  if (opps.length <= 3) {
+    return 'Each range you have to get through: ' + sorted.map(phrase).join('; ') + '.';
+  }
+  return b(opps.length + ' ranges') + ' to get through — the two tightest are ' +
+    sorted.slice(0, 2).map(phrase).join(' and ') + '. The other ' + (opps.length - 2) +
+    ' are wider and are in the equity figure, but not named here.';
+}
+
+// How many of the players yet to act are expected to fold before it comes back
+// round. Returned as a range, because a fractional expectation is not a fact
+// about any one player.
+export function foldsExpectedPhrase(expected) {
+  if (!isFinite(expected) || expected < 0.5) return null;
+  const lo = Math.floor(expected), hi = Math.ceil(expected);
+  if (lo === hi) return String(lo);
+  if (lo === 0) return '1';
+  return lo + '–' + hi;
+}
+
 // How the table as a whole behaves. Two players who never fold kill a bluff;
 // two who fold a lot make one work.
 export function tableFoldRead(opponents) {
@@ -87,10 +137,13 @@ export function tableFoldRead(opponents) {
   const sticky = opponents.filter(function (o) { return o.foldChance < 0.25; });
   const foldy = opponents.filter(function (o) { return o.foldChance >= 0.5; });
   if (opponents.length >= 2 && sticky.length >= 2) {
+    // Not "calling stations": a player who never folds because they raise back
+    // is a different animal from one who never folds because they call, and the
+    // styles are hidden anyway. Describe the behaviour, name nothing.
     return {
       kind: 'sticky',
-      text: 'Two of the players left ' + foldinessWord(sticky[1].foldChance) +
-        ' — with that many calling stations behind you, a bluff has nowhere to go.',
+      text: 'Two of the players left ' + foldinessWordPlural(sticky[1].foldChance) +
+        ' — with that many hands unwilling to go anywhere, a bluff has nowhere to go.',
     };
   }
   if (opponents.length >= 2 && foldy.length === opponents.length) {
@@ -159,6 +212,9 @@ export function shapeLines(shape, ctx) {
     out.push('That is ' + b(shape.outs + ' outs') + ', which get there about ' + b(pctWhole(shape.equityFromOuts) + '%') +
       ' of the time by the river.' + (hasPair ? '' : ' Right now you beat nothing that is calling you.'));
     out.push('A draw plays better as a bet than as a call: betting wins the pot when they fold now, and again when you hit later. Calling only wins the second way.');
+    out.push(foldy
+      ? 'Against this table the first way is live too — they fold often enough that the bluff part of this bet is real, not just theory.'
+      : 'Against this table, though, do not bank on the first way — they rarely fold, so almost all of this bet’s edge has to come from actually hitting your outs. That makes it a value-and-protection bet with a little bluff equity attached, not a real bluff.');
     if (shape.cardsToCome >= 2 && shape.riverOnlyEquity !== undefined) {
       out.push('Plan the next street now. If the turn bricks, the same outs are only worth ' +
         b(pctWhole(shape.riverOnlyEquity) + '%') + ' for the river alone — so decide now whether a missed turn means another bet or a cheap exit.');
@@ -177,6 +233,195 @@ export function shapeLines(shape, ctx) {
       ' — a hand you are happy to show down. From here the job is getting paid, not getting there.');
   }
   return out;
+}
+
+/* ---- action families, and how clear-cut the pick actually is ---- */
+
+// A different bet SIZE is not a different decision; a different family is.
+function actionFamily(label) {
+  if (/^fold/.test(label)) return 'fold';
+  if (/^check/.test(label)) return 'check';
+  if (/^call/.test(label)) return 'call';
+  return 'aggro';
+}
+
+// Some spots have exactly one answer (2-7 into a big raise) and some are a coin
+// flip between two reasonable lines. Saying both in the same confident voice is
+// what makes a coach untrustworthy, so the gap to the best option from a
+// DIFFERENT family is measured against both the Monte Carlo noise on the two EVs
+// and a slice of the pot — "clear" then means clear in chips as well as
+// statistically, and a toss-up is admitted as one.
+export function decisionClarity(options, recommended, pot) {
+  const opts = options || [];
+  if (!recommended || opts.length < 2) return { level: 'clear', alt: null, gap: 0 };
+  const fam = actionFamily(recommended.label);
+  // Checking weakly dominates folding — you can always fold later, for free — so
+  // whenever a check is on offer, folding is never the meaningful runner-up,
+  // even though the two price at exactly 0.
+  const canCheck = opts.some(function (o) { return actionFamily(o.label) === 'check'; });
+  let alt = null;
+  opts.forEach(function (o) {
+    if (o === recommended || actionFamily(o.label) === fam) return;
+    if (canCheck && actionFamily(o.label) === 'fold') return;
+    if (!alt || o.ev > alt.ev) alt = o;
+  });
+  if (!alt) return { level: 'clear', alt: null, gap: 0 };
+  const gap = recommended.ev - alt.ev;
+  const se = Math.sqrt(Math.pow(recommended.evSe || 0, 2) + Math.pow(alt.evSe || 0, 2));
+  const material = Math.max(se, Math.max(pot, 1) * 0.04);
+  let level = 'solid';
+  if (gap <= material * 0.5) level = 'toss-up';
+  else if (gap <= material) level = 'marginal';
+  else if (gap >= material * 3) level = 'clear';
+  return { level: level, alt: alt, gap: gap, material: material };
+}
+
+// Which of two near-equal lines is the cheaper shot. The point is to hand over
+// the trade-off, not to make the choice for them.
+export function riskNote(rec, alt) {
+  if (!rec || !alt) return null;
+  const a = rec.amount || 0, c = alt.amount || 0;
+  if (a === c) return null;
+  const cheaper = a < c ? rec : alt;
+  const dearer = a < c ? alt : rec;
+  if ((cheaper.amount || 0) === 0) {
+    return b(cheaper.label) + ' risks nothing, where ' + b(dearer.label) + ' puts ' +
+      b(chips(dearer.amount || 0)) + ' at stake';
+  }
+  return b(cheaper.label) + ' risks ' + b(chips(Math.abs(c - a))) + ' fewer chips than ' + b(dearer.label);
+}
+
+/* ---- picking the one thing worth saying first ---- */
+
+// Would this bet still be the best line if they never folded at all? If not,
+// fold equity is what is carrying it, and that is the fact worth leading with.
+// Closed form, so it costs nothing: no second simulation.
+export function foldEquityDecisive(spot, rec, alt) {
+  if (!rec || rec.fold === undefined) return false;
+  if (rec.eCalled === undefined || rec.eCalled === null) return rec.fold >= 0.25;
+  const P = spot.pot, B = rec.amount, e = rec.eCalled;
+  const evIfTheyNeverFolded = e * (P + B) - (1 - e) * B;
+  return evIfTheyNeverFolded < (alt ? alt.ev : 0);
+}
+
+// Acting last is credited explicitly in the equity the options were priced on,
+// so its contribution can be subtracted back out exactly: if taking it away
+// flips the pick, position is the reason this works and deserves saying.
+export function positionDecisive(spot, rec, alt) {
+  const credit = spot.position ? spot.position.credit : 0;
+  if (!credit || credit <= 0 || !rec) return false;
+  // Only calls and bets are priced off equity, so only they carry the credit.
+  // A check is fixed at 0 either way, and subtracting a credit it never had
+  // would credit position for something it did not do.
+  if (actionFamily(rec.label) !== 'call') return false;
+  const swing = credit * (spot.pot + (spot.toCall || 0));
+  return (rec.ev - swing) < (alt ? alt.ev : 0);
+}
+
+// Why the better-rated line was passed over. A bet and a call are passed over
+// for different reasons, and saying "it leans on them folding" about a call is
+// simply wrong.
+function whyPassedOver(alt) {
+  const family = alt ? actionFamily(alt.label) : 'aggro';
+  if (family === 'aggro') return 'that leans on them folding, which is the hardest thing to call';
+  if (family === 'call') return 'that edge is thin enough to disappear if your read is even slightly off';
+  return 'that edge is too thin to count on';
+}
+
+// Why a different line still has something going for it, in one clause.
+function meritClause(opt) {
+  if (!opt) return null;
+  const family = actionFamily(opt.label);
+  if (family === 'aggro') return 'a bet can win it outright when they fold';
+  if (family === 'call') return 'calling keeps their bluffs in';
+  if (family === 'check') return 'checking keeps the pot small';
+  return 'folding costs you nothing';
+}
+
+// The single sentence that says why this is the answer. Everything else is
+// context and belongs behind the fold.
+export function decisionReason(spot, rec, alt) {
+  const C = spot.toCall, P = spot.pot;
+  const family = rec ? actionFamily(rec.label) : 'fold';
+  // The figure quoted must be the one the decision was actually made on. The
+  // headline equity number is against everyone still in; the options were
+  // priced against those expected to keep going, plus the credit for acting
+  // last. Quoting the first would print "you hold 4% where the price needs 8%"
+  // above a recommendation to call.
+  const eUsed = (spot.decisionEquity === null || spot.decisionEquity === undefined)
+    ? spot.rangeEquity : spot.decisionEquity;
+  const adj = pctWhole(eUsed);
+  const reqPct = pctWhole(requiredEquity(C, P));
+  const price = 'You hold ' + b(adj + '%') + ' where the price needs ' + b(reqPct + '%') + '.';
+
+  if (family === 'aggro' && rec.fold !== undefined) {
+    const gets = pctWhole(rec.fold);
+    const need = pctWhole(breakEvenFold(rec.amount, P));
+    const eC = pctWhole(rec.eCalled);
+    if (foldEquityDecisive(spot, rec, alt)) {
+      return 'It works because they fold about ' + b(gets + '%') + ' of the time here, and this size ' +
+        (gets - need >= 5 ? 'only needs ' : 'needs ') + b(need + '%') + ' to pay for itself.';
+    }
+    if (eC === null) return 'It wins the pot often enough from here to be worth the chips.';
+    if (rec.amount < P * 0.25) {
+      return 'It only costs ' + b(chips(rec.amount)) + ' into a pot of ' + b(chips(P)) +
+        ' — cheap enough to be worth it on ' + b(eC + '%') + ' when they call.';
+    }
+    return 'It works even when they call: you hold ' + b(eC + '%') + ' against the hands that continue' +
+      (gets >= 15 ? ', and they fold about ' + b(gets + '%') + ' of the time on top of that' : '') + '.';
+  }
+  const positional = positionDecisive(spot, rec, alt)
+    ? ' Acting last from here is what tips it — out of position this is a fold.'
+    : '';
+  if (family === 'call') return price + positional;
+  if (family === 'fold') return C > 0 ? price : 'Nothing here is worth putting chips in for.';
+  return 'Nothing to call, so the next card is free.' + positional;
+}
+
+// At most two extra facts, each shown only when it is doing real work in this
+// spot. Order is by how often the fact changes the decision.
+export function quickPoints(spot, ctx) {
+  const opps = spot.opponents || [];
+  const shape = spot.shape;
+  const field = spot.field;
+  const candidates = [];
+
+  if (shape) {
+    if (shape.isDrawing && !ctx.reasonHasOuts) {
+      candidates.push(shape.outs + ' outs — about ' + pctWhole(shape.equityFromOuts) + '% to get there by the river');
+    } else if (shape.bricked) {
+      candidates.push('your draw missed, so there is nothing to show down');
+    } else if (shape.madeCategory === 1 && !shape.isDrawing) {
+      candidates.push('a bluff-catcher: this hangs on how often they bluff, not on your pair');
+    }
+  }
+  // Heads-up is the default mental model, so "2-way" is not news. A crowded pot
+  // is, and so is a field that is about to thin out.
+  const expected = field ? foldsExpectedPhrase(field.expectedFolds) : null;
+  if (opps.length >= 3 || (opps.length >= 2 && expected)) {
+    candidates.push(opps.length + '-way — you have to beat all of them' +
+      (expected ? ', though about ' + expected + ' should fold before it gets back to you' : ''));
+  }
+  const tight = opps.filter(function (o) {
+    return o.rangeTopPct !== null && o.rangeTopPct !== undefined && o.rangeTopPct <= 25;
+  });
+  if (tight.length === 1) {
+    candidates.push(tight[0].name + ' is repping the top ' + Math.round(tight[0].rangeTopPct) + '% of hands');
+  }
+  const airy = opps.filter(function (o) { return o.airPct >= 25; });
+  if (airy.length === 1) {
+    candidates.push(airy[0].name + ' has plenty of air in that range — roughly ' + Math.round(airy[0].airPct) + '%');
+  }
+  if (opps.length && ctx.jointFold < 0.12) {
+    candidates.push('nobody here folds much, so a bluff has nowhere to go');
+  }
+  if (spot.blockerPct >= 25 && ctx.mainName) {
+    candidates.push('your cards block about ' + Math.round(spot.blockerPct) + '% of ' + ctx.mainName + "'s strong hands");
+  }
+  if (spot.degradedShare > 0.02) {
+    candidates.push('you hold so many of their likely cards that this read is a rough one');
+  }
+  return candidates.slice(0, 2);
 }
 
 /* ---- the coach ---- */
@@ -207,7 +452,12 @@ export function buildCoachAdvice(spot) {
   }
 
   /* 2. raw vs range-adjusted equity */
-  const villainPhrase = describeVillain(spot.villain, spot.revealStyles);
+  // Multiway, the adjusted figure is equity against EVERYONE still in, so it
+  // must not be attributed to one player's range — naming only the tightest
+  // silently wrote the loosest player out of the story.
+  const villainPhrase = nOpp >= 2
+    ? 'the combined range of the ' + nOpp + ' still in'
+    : describeVillain(spot.villain, spot.revealStyles);
   if (adj !== null && raw !== null) {
     if (adj <= raw - 2) {
       lines.push('You hold ' + b(raw + '%') + ' against a random hand, but ' + villainPhrase +
@@ -233,22 +483,44 @@ export function buildCoachAdvice(spot) {
       lines.push('That is within a couple of points of the price — this call is close to break-even either way.');
     }
     if (borderline) {
-      lines.push('The equity estimate carries about ' + b('±' + ci + ' points') +
-        ', which is wider than the margin, so treat this one as genuinely close rather than clear-cut.');
+      lines.push('That gap is thin enough that it could fall either way on the day — treat this as a close call rather than a clear one.');
     }
   }
 
   /* 3b. what you are actually holding */
-  shapeLines(spot.shape, { foldChance: spot.opponents && spot.opponents.length === 1 ? spot.opponents[0].foldChance : 0.35 })
+  // The relevant read for "will fold equity carry this bet" is the joint chance
+  // EVERYONE still in folds — the same multiplicative fold-equity math used for
+  // bet sizing elsewhere (initializePokerTrainer.js foldChance product). A flat
+  // placeholder here used to ignore who was actually at the table once there
+  // were 2+ opponents, so two maniacs and two nits read identically.
+  const jointFoldChance = opps.length
+    ? opps.reduce(function (acc, o) { return acc * o.foldChance; }, 1)
+    : 0.35;
+  shapeLines(spot.shape, { foldChance: jointFoldChance })
     .forEach(function (l) { lines.push(l); });
 
-  /* 4. multiway */
+  /* 4. multiway — and how much of that field is actually expected to stay */
   if (nOpp >= 2) {
-    lines.push(b(nOpp + ' players') + ' are still in, and your hand has to beat all of them at once — ' +
-      'that is why the same cards are worth less in a crowded pot than heads-up.');
+    let crowd = b(nOpp + ' players') + ' are still in, and your hand has to beat all of them at once — ' +
+      'that is why the same cards are worth less in a crowded pot than heads-up.';
+    const field = spot.field;
+    const expected = field ? foldsExpectedPhrase(field.expectedFolds) : null;
+    if (expected) {
+      crowd += ' On current reads about ' + b(expected) + ' of those still to act should fold before it comes back to you, ' +
+        'so the EV figures are priced against the ' + b(String(field.contesting)) + ' expected to see it through.';
+    }
+    lines.push(crowd);
+    const attribution = rangeAttribution(opps, spot.revealStyles);
+    if (attribution) lines.push(attribution);
   }
 
   /* 5. fold equity — can a bet do work your hand cannot? */
+  // Everything here is framed around whether aggression is the RECOMMENDED line.
+  // Narrating a profitable-looking bluff and then recommending a check reads as
+  // self-contradictory even when both halves are individually true.
+  const rec = spot.recommended;
+  const clarity = decisionClarity(spot.options, rec, P);
+  const recIsAggro = !!(rec && actionFamily(rec.label) === 'aggro');
   const aggro = (spot.options || []).filter(function (o) { return o.fold !== undefined; });
   let bestAggro = null;
   aggro.forEach(function (o) { if (!bestAggro || o.ev > bestAggro.ev) bestAggro = o; });
@@ -256,20 +528,47 @@ export function buildCoachAdvice(spot) {
   if (bestAggro) {
     const need = pctWhole(breakEvenFold(bestAggro.amount, P));
     const gets = pctWhole(bestAggro.fold);
+    const eCalledPct = pctWhole(bestAggro.eCalled);
     if (nOpp >= 2) {
       lines.push('Raising is the tool that fixes a crowded pot: fold even one player out and both the price ' +
         'and the number of hands you have to beat come down.');
     }
-    if (spot.rangeEquity < 0.45) {
+    if (recIsAggro) {
+      // Always say WHERE the edge comes from, so a bet is never recommended on
+      // unexplained fold equity.
       if (gets >= need) {
         lines.push('A bet of ' + b(chips(bestAggro.amount)) + ' folds the field about ' + b(gets + '%') +
           ' of the time and only needs ' + b(need + '%') + ' to pay for itself, so it profits without your hand ever having to win.');
       } else {
-        const rarely = gets < 3 ? 'they almost never fold' : 'they only fold about ' + b(gets + '%');
-        lines.push('A bluff of ' + b(chips(bestAggro.amount)) + ' would need them to fold ' + b(need + '%') +
-          ' of the time and ' + rarely + ', so a bluff is not advised here.');
+        lines.push('This is not being recommended as a bluff: at ' + b(chips(bestAggro.amount)) +
+          ' it needs ' + b(need + '%') + ' folds and gets about ' + b(gets + '%') + '.' +
+          (eCalledPct === null ? ' The edge is in what happens when they call, not in them giving up.'
+            : ' The edge is in what happens when they call — you hold ' + b(eCalledPct + '%') +
+              ' against the range that continues against that size.'));
       }
-    } else if (spot.rangeEquity > 0.6 && gets >= 55 && !(spot.shape && spot.shape.isDrawing)) {
+    } else if (gets >= need) {
+      // Betting genuinely clears its own bar, but is not the pick. Say both —
+      // including the case where the bet leads on the point estimate and was
+      // passed over because that estimate is the shakiest number in the model.
+      const versus = ' (' + b(signed(rec.ev)) + ' against ' + b(signed(bestAggro.ev)) + ')';
+      const head = 'A bet of ' + b(chips(bestAggro.amount)) + ' would fold the field about ' + b(gets + '%') +
+        ' of the time against the ' + b(need + '%') + ' it needs, so it is a real option, not a mistake';
+      if (bestAggro.ev > rec.ev) {
+        lines.push(head + ' — it even rates higher on paper' + versus + '. That rating rests on how often they ' +
+          'give up, though, which is the hardest thing to judge about anyone, and a bet this size leans on it hardest. ' +
+          b(rec.label) + ' gets to the same place for fewer chips.');
+      } else if (clarity.level === 'toss-up' || clarity.level === 'marginal') {
+        lines.push(head + ' — it rates about the same as ' + b(rec.label) + versus +
+          ', so take it if you would rather have the initiative.');
+      } else {
+        lines.push(head + ' — but ' + b(rec.label) + ' prices out better here' + versus + '.');
+      }
+    } else if (spot.rangeEquity < 0.45) {
+      const rarely = gets < 3 ? 'they almost never fold' : 'they only fold about ' + b(gets + '%');
+      lines.push('A bluff of ' + b(chips(bestAggro.amount)) + ' would need them to fold ' + b(need + '%') +
+        ' of the time and ' + rarely + ', so a bluff is not advised here.');
+    }
+    if (!recIsAggro && spot.rangeEquity > 0.6 && gets >= 55 && !(spot.shape && spot.shape.isDrawing)) {
       lines.push('You are ahead often enough that folding them out costs you money — pick a size they can still call.');
     }
   }
@@ -279,37 +578,54 @@ export function buildCoachAdvice(spot) {
   const posLine = positionLine(spot.position);
   if (posLine) lines.push(posLine);
 
-  /* 6. verdict */
-  const rec = spot.recommended;
+  /* 6. verdict — short, and pitched at how clear-cut this actually is. The
+     "why" lives in reason, the caveats in points, the full case in lines. */
   const label = rec ? rec.label : 'fold';
-  let action = 'fold';
-  let verdict = 'A fold looks favourable here.';
-  if (label === 'check') {
-    action = 'check';
-    verdict = spot.streetName === 'River'
-      ? 'Checking looks best — you get to see it through without paying for the privilege.'
-      : 'Checking looks best — you keep the pot small and see the next card for nothing.';
-  } else if (label.indexOf('call') === 0) {
-    action = 'call';
-    verdict = 'Calling looks best: the price is good enough, and raising folds out too much of what you already beat.';
-  } else if (rec && rec.fold !== undefined) {
-    action = 'bet';
-    verdict = b(label.charAt(0).toUpperCase() + label.slice(1)) + ' looks best — it wins two ways, when they fold and when you have the better hand.';
-  } else if (label === 'fold') {
-    action = 'fold';
-    verdict = C > 0
-      ? 'A fold looks favourable — nothing here prices in.'
-      : 'Nothing here is worth committing chips to.';
+  const fam = rec ? actionFamily(label) : 'fold';
+  const action = fam === 'aggro' ? 'bet' : fam;
+  const headline = b(label.charAt(0).toUpperCase() + label.slice(1));
+  const reason = decisionReason(spot, rec, clarity.alt);
+
+  let verdict;
+  let extra = null;
+  if (clarity.level === 'clear' || clarity.level === 'solid') {
+    verdict = headline + '.';
+  } else if (clarity.level === 'marginal') {
+    verdict = headline + ', just — but ' + b(clarity.alt.label) +
+      (actionFamily(clarity.alt.label) === 'fold'
+        ? ' gives up very little here.'
+        : ' also looks positive.');
+  } else if (clarity.gap < 0) {
+    // The pick trails on the raw number and was taken as the cheaper shot. Say
+    // that in poker terms — a fold rate is a guess about a person, not a
+    // shortcoming of the arithmetic.
+    verdict = headline + ' — the safer play.';
+    const risk = riskNote(rec, clarity.alt);
+    extra = b(clarity.alt.label) + ' rates higher on paper (' + b(signed(clarity.alt.ev)) +
+      '), but ' + whyPassedOver(clarity.alt) +
+      (risk ? ', and ' + risk : '') + '. Take it only if you fancy the gamble.';
+  } else {
+    verdict = headline + ' or ' + b(clarity.alt.label) + ' — your call.';
+    const risk = riskNote(rec, clarity.alt);
+    const merit = meritClause(clarity.alt);
+    extra = 'Both rate about the same here (' + b(signed(rec.ev)) + ' against ' +
+      b(signed(clarity.alt.ev)) + ').' + (risk ? ' ' + risk + ',' : '') +
+      (merit ? ' but ' + merit + '.' : '');
   }
 
   /* layer 2: frequencies */
+  // An option is the same decision as the pick when the gap between them is
+  // inside THEIR OWN combined error bar — measured per row, since a 1.5x-pot
+  // bluff and a check carry wildly different uncertainty.
   const frequencies = (spot.options || []).slice().sort(function (x, y) { return y.ev - x.ev; })
     .map(function (o) {
+      const se = rec ? Math.sqrt(Math.pow(rec.evSe || 0, 2) + Math.pow(o.evSe || 0, 2)) : 0;
       return {
         label: o.label,
         ev: signed(o.ev),
         fold: o.fold === undefined ? null : pctWhole(o.fold) + '%',
         recommended: o === rec,
+        tied: !!(rec && o !== rec && Math.abs(o.ev - rec.ev) <= Math.max(se, 1)),
       };
     });
 
@@ -330,11 +646,31 @@ export function buildCoachAdvice(spot) {
       pctWhole(breakEvenFold(bestAggro.amount, P)) + '%.');
   }
   if (adj !== null) {
-    maths.push('Range-adjusted equity ' + adj + '%' + (ci === null ? '' : ' ±' + ci + ' points at 95% confidence') +
+    maths.push('Range-adjusted equity ' + adj + '%' + (ci === null ? '' : ', give or take ' + ci + ' points') +
       (spot.trials ? ', from ' + spot.trials + ' simulated runouts.' : '.'));
   }
 
-  return { action: action, verdict: verdict, lines: lines, frequencies: frequencies, maths: maths };
+  const points = quickPoints(spot, {
+    jointFold: jointFoldChance,
+    mainName: spot.villain ? spot.villain.name : null,
+    reasonHasOuts: /outs/.test(reason),
+  });
+
+  // When the pick trails on the raw number, the price sentence can read as a
+  // flat contradiction of it ("you hold 16% where the price needs 14%" over a
+  // fold). The trade-off sentence says everything that matters there.
+  const trailing = clarity.level === 'toss-up' && clarity.gap < 0;
+
+  return {
+    action: action,
+    clarity: clarity.level,
+    verdict: verdict,
+    reason: trailing ? extra : (extra ? reason + ' ' + extra : reason),
+    points: points,
+    lines: lines,
+    frequencies: frequencies,
+    maths: maths,
+  };
 }
 
 /* ---- post-hand review: was the decision right, separately from what happened ---- */
@@ -342,13 +678,8 @@ export function buildCoachAdvice(spot) {
 // What kind of miss was it? A flat chip threshold treats "bet a third of the pot
 // instead of a half" the same as "raise 27o instead of folding", which is both
 // wrong and demoralising. Grade it against what was actually on offer, and
-// separate a sizing tweak from taking the wrong line altogether.
-function actionFamily(label) {
-  if (/^fold/.test(label)) return 'fold';
-  if (/^check/.test(label)) return 'check';
-  if (/^call/.test(label)) return 'call';
-  return 'aggro';
-}
+// separate a sizing tweak from taking the wrong line altogether. Action families
+// are shared with the live coach, and defined above.
 function sizeTag(label) {
   const m = label.match(/\(([^)]+)\)/);
   return m ? m[1] : null;

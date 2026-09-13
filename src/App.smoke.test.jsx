@@ -42,7 +42,7 @@ test('deals a hand, coaches the spot, and reviews the decision afterwards', () =
   const adj = document.getElementById('eqAdjNum').textContent;
   expect(raw, 'raw equity').toMatch(/^\d+%$/);                // whole numbers only
   expect(adj, 'range-adjusted equity').toMatch(/^\d+% ±\d+$/); // with visible uncertainty
-  expect(document.getElementById('eqReliabilityBody').textContent).toContain('95% confidence');
+  expect(document.getElementById('eqReliabilityBody').textContent).toContain('give or take');
 
   // the ring is filled to the range-adjusted figure
   const ring = document.getElementById('eqRing');
@@ -54,8 +54,12 @@ test('deals a hand, coaches the spot, and reviews the decision afterwards', () =
   expect(document.getElementById('coachVerdict').textContent).toBe('');
   screen.getByRole('button', { name: 'Ask the coach' }).click();
 
+  // The headline is deliberately terse ("Fold."); the one-line reason under it
+  // carries the why, and the full case sits behind "Why this".
   const verdict = document.getElementById('coachVerdict').textContent;
-  expect(verdict.length).toBeGreaterThan(20);
+  expect(verdict.length).toBeGreaterThan(3);
+  expect(document.getElementById('coachConf').textContent.length).toBeGreaterThan(3);
+  expect(document.getElementById('coachReason').textContent.length).toBeGreaterThan(20);
   const lines = document.getElementById('coachLines').textContent;
   expect(lines).toMatch(/equity/);
   expect(lines, 'position should always be mentioned').toMatch(/You are |You act last|first to act/);
