@@ -7,7 +7,7 @@ import {
   describeVillain,
   pctWhole,
   requiredEquity,
-} from './coach';
+} from './coach.js';
 
 const strip = (s) => s.replace(/<[^>]+>/g, '');
 const allText = (a) => strip([a.verdict, a.reason, ...a.points, ...a.lines, ...a.maths].join(' '));
@@ -46,26 +46,39 @@ describe('pot odds anchor', () => {
   });
 });
 
-const spot = (over = {}) => ({
-  streetName: 'Flop',
-  toCall: 50,
-  pot: 150,
-  rawEquity: 0.35,
-  rangeEquity: 0.23,
-  equitySe: 0.014,
-  degradedShare: 0,
-  trials: 900,
-  opponents: [{ name: 'Sofia', foldChance: 0.12, rangeTopPct: 18, airPct: 4, styleLabel: 'Station' }],
-  options: [
+const DEFAULT_OPP = { name: 'Sofia', foldChance: 0.12, rangeTopPct: 18, airPct: 4, styleLabel: 'Station' };
+
+// A spot where the bet option claims a fold rate its own opponents do not
+// support is not a spot that can happen at a table, and a fixture that
+// describes one is asking the coach to be consistent about an impossibility.
+// The field's fold chance is therefore derived from whoever is in the spot, so
+// overriding `opponents` moves the bet option with it.
+const jointFold = (opps) => opps.reduce((acc, o) => acc * o.foldChance, 1);
+
+const spot = (over = {}) => {
+  const opponents = over.opponents || [DEFAULT_OPP];
+  const options = over.options || [
     { label: 'fold', ev: 0, amount: 0 },
     { label: 'call 50', ev: -12, amount: 50 },
-    { label: 'bet 120 (¾ pot)', ev: -8, amount: 120, fold: 0.12 },
-  ],
-  recommended: { label: 'fold', ev: 0, amount: 0 },
-  revealStyles: false,
-  villain: { name: 'Sofia', foldChance: 0.12, rangeTopPct: 18, airPct: 4, styleLabel: 'Station' },
-  ...over,
-});
+    { label: 'bet 120 (¾ pot)', ev: -8, amount: 120, fold: jointFold(opponents) },
+  ];
+  return {
+    streetName: 'Flop',
+    toCall: 50,
+    pot: 150,
+    rawEquity: 0.35,
+    rangeEquity: 0.23,
+    equitySe: 0.014,
+    degradedShare: 0,
+    trials: 900,
+    recommended: { label: 'fold', ev: 0, amount: 0 },
+    revealStyles: false,
+    villain: opponents[0],
+    ...over,
+    opponents,
+    options,
+  };
+};
 
 describe('coach advice', () => {
   test('anchors on pot odds in plain language', () => {

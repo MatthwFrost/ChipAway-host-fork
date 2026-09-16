@@ -10,7 +10,7 @@
    card and ask whether it turns this into a hand worth showing down.
    ============================================================ */
 
-import { RANK_CHARS, SUIT_NAMES, cardStr, evaluateBest, makeDeck } from './evaluator';
+import { RANK_CHARS, SUIT_NAMES, cardStr, evaluateBest, makeDeck } from './evaluator.js';
 
 const CAT = { HIGH: 0, PAIR: 1, TWO_PAIR: 2, TRIPS: 3, STRAIGHT: 4, FLUSH: 5 };
 

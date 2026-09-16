@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { analyzeHandShape, describeShape, outsToEquity } from './handShape';
+import { analyzeHandShape, describeShape, outsToEquity } from './handShape.js';
 
 const c = (s) => ({ rank: '23456789TJQKA'.indexOf(s[0]) + 2, suit: s[1] });
 const hand = (...xs) => xs.map(c);

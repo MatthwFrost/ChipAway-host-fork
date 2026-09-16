@@ -1,9 +1,19 @@
-import { buildCoachAdvice, buildHandReview, pctWhole, ci95Points } from './coach';
-import { analyzeHandShape, describeShape, outsToEquity, unseenCount } from './handShape';
+import { buildCoachAdvice, buildHandReview, pctWhole, ci95Points } from './coach.js';
+import { buildSpotModel } from './spotModel.js';
+import { blockerPct as blockerPctOf, buildRangeIndex as buildRangeIndexFor, calcEquity as calcEquityFor, handPercentile as handPercentileOf } from './equity.js';
+import { POS_MULT, decidePostflop, decidePreflop } from './botPolicy.js';
+import * as D from './decision.js';
+import { buildSidePots as buildSidePotsFor } from './table.js';
+import {
+  BLUFF_TOP, HERO_PROF, PROFILES, PROFILE_KEYS,
+  afterAggro, afterCall, afterCheck, continueThreshold, evBetSe, evCallSe,
+  evOfBet, evOfCall, jointResponse, profileOf, projectedHeroRep, rangeWidth, responseTo,
+} from './opponentModel.js';
+import { analyzeHandShape, describeShape, outsToEquity, unseenCount } from './handShape.js';
 import {
   RANK_CHARS, PIPS, makeDeck, shuffle, cardStr, cardTxt,
-  cmpScore, evaluateBest, scoreKey, handName,
-} from './evaluator';
+  cmpScore, evaluateBest, handName,
+} from './evaluator.js';
 
 export function initializePokerTrainer(){
   if(window.__chipAwayInitialized)return;
@@ -19,158 +29,27 @@ const sigmoid=function(x){return 1/(1+Math.exp(-x));};
    A big bet raises rLo AND opens a bluff band, because big bets
    are polarised: nuts and air, with medium hands checking.
    ============================================================ */
-function chenScore(h){
-  const a=h[0].rank>=h[1].rank?h[0]:h[1];
-  const b=h[0].rank>=h[1].rank?h[1]:h[0];
-  const val=function(r){return r===14?10:r===13?8:r===12?7:r===11?6:r/2;};
-  let s;
-  if(a.rank===b.rank){ s=Math.max(5,val(a.rank)*2)+2; }   // pairs get set-mining credit
-  else{
-    s=val(a.rank);
-    if(a.suit===b.suit) s+=2;
-    const gap=a.rank-b.rank-1;
-    if(gap===1)s-=1;else if(gap===2)s-=2;else if(gap===3)s-=4;else if(gap>=4)s-=5;
-    if(gap<=1&&a.rank<12)s+=1;
-  }
-  return Math.round(s*100);
-}
+// The range index, hand percentile and Monte Carlo engine live in equity.js so
+// the headless harness runs the same code the app does. These wrappers just
+// supply the board and index the pure functions need.
 let rangeIndex=[];
-function buildRangeIndex(){
-  const used={};
-  for(let i=0;i<board.length;i++) used[cardStr(board[i])]=1;
-  const avail=makeDeck().filter(function(c){return !used[cardStr(c)];});
-  const list=[];
-  for(let i=0;i<avail.length;i++){
-    for(let j=i+1;j<avail.length;j++){
-      const h=[avail[i],avail[j]];
-      list.push({h:h,s:board.length?scoreKey(evaluateBest(h.concat(board))):chenScore(h)});
-    }
-  }
-  list.sort(function(x,y){return x.s-y.s;});
-  rangeIndex=list;
-}
-function handPercentile(hole){
-  const s=board.length?scoreKey(evaluateBest(hole.concat(board))):chenScore(hole);
-  let lo=0,hi=rangeIndex.length;
-  while(lo<hi){const mid=(lo+hi)>>1;if(rangeIndex[mid].s<s)lo=mid+1;else hi=mid;}
-  return rangeIndex.length?lo/rangeIndex.length:0.5;
-}
-const BLUFF_TOP=0.34;   // bluffs come from the bottom third of hands
-// Returns {h,source}. source:'range' = drawn from the player's true implied
-// range; 'wide' = the narrow range was blocked out and we fell back to the
-// whole index -- "equity vs their range" degraded toward "equity vs random"
-// for this trial. calcEquity aggregates this into degradedShare (fix C4).
-function sampleFromRange(pl,blocked){
-  const N=rangeIndex.length;
-  if(!N) return null;
-  const useBluff=Math.random()<(pl.rBluff||0);
-  const lo=useBluff?0:(pl.rLo||0);
-  const hi=useBluff?BLUFF_TOP:1;
-  const a=Math.floor(lo*N), b=Math.max(a+1,Math.floor(hi*N));
-  for(let t=0;t<26;t++){
-    const e=rangeIndex[a+Math.floor(Math.random()*(b-a))];
-    if(e&&!blocked[cardStr(e.h[0])]&&!blocked[cardStr(e.h[1])]) return {h:e.h,source:'range'};
-  }
-  for(let t=0;t<40;t++){
-    const e=rangeIndex[Math.floor(Math.random()*N)];
-    if(e&&!blocked[cardStr(e.h[0])]&&!blocked[cardStr(e.h[1])]) return {h:e.h,source:'wide'};
-  }
-  return null;
-}
-// what a bet of this size, from this style, tells everyone else
-function narrowAggro(p,sizeRatio){
-  const prof=p.isHero?HERO_PROF:PROFILES[p.profile];
-  const sr=clamp(sizeRatio,0.2,1.6);
-  const tighten=prof.sigRaise+0.13*(sr-0.62);
-  p.rLo=Math.max(p.rLo||0,clamp(tighten,0,0.95));
-  const pol=clamp(prof.polar*(0.55+0.62*sr),0,0.92);
-  const share=clamp(pol*prof.bluffFreq*2.4,0,0.42);
-  p.rBluff=Math.max(p.rBluff||0,share);
-}
-function narrowCall(p){
-  const prof=p.isHero?HERO_PROF:PROFILES[p.profile];
-  p.rLo=Math.max(p.rLo||0,prof.sigCall);
-  p.rBluff=(p.rBluff||0)*0.30;      // calling with pure air is rare
-}
-function narrowCheck(p){ p.rBluff=(p.rBluff||0)*0.65; }
-// how many of their combos your own cards remove
-function blockerPct(hole,pl){
-  const N=rangeIndex.length;
-  if(!N) return 0;
-  const a=Math.floor((pl.rLo||0)*N);
-  const held={};
-  for(let i=0;i<hole.length;i++) held[cardStr(hole[i])]=1;
-  let tot=0,blk=0;
-  for(let i=a;i<N;i++){
-    tot++;
-    if(held[cardStr(rangeIndex[i].h[0])]||held[cardStr(rangeIndex[i].h[1])]) blk++;
-  }
-  return tot?100*blk/tot:0;
-}
+function buildRangeIndex(){ rangeIndex=buildRangeIndexFor(board); }
+function handPercentile(hole){ return handPercentileOf(hole,board,rangeIndex); }
+// What a bet of this size, from this style, tells everyone else. The rules live
+// in opponentModel.js so the coach prices against exactly the range the table
+// is showing; these only copy the result back onto the mutable player object.
+function profOf(p){ return p.isHero?HERO_PROF:profileOf(p.profile); }
+function applyRange(p,next){ p.rLo=next.rLo; p.rBluff=next.rBluff; }
+function narrowAggro(p,sizeRatio){ applyRange(p,afterAggro(p,profOf(p),sizeRatio)); }
+function narrowCall(p){ applyRange(p,afterCall(p,profOf(p))); }
+function narrowCheck(p){ applyRange(p,afterCheck(p)); }
+function blockerPct(hole,pl){ return blockerPctOf(hole,pl,rangeIndex); }
 
 /* ============================================================
    4. EQUITY CALCULATOR
    ============================================================ */
 function calcEquity(hole,opponents,trials,useRanges){
-  const nOpp=opponents.length;
-  if(nOpp<=0) return {win:100,tie:0,lose:0,equity:100,se:0,ok:true,degradedShare:0};
-  const baseBlocked={};
-  for(let i=0;i<hole.length;i++) baseBlocked[cardStr(hole[i])]=1;
-  for(let i=0;i<board.length;i++) baseBlocked[cardStr(board[i])]=1;
-  const deckAll=makeDeck();
-  let win=0,tie=0,done=0,equitySum=0,degraded=0;
-  for(let t=0;t<trials;t++){
-    const blocked={};
-    for(const k in baseBlocked) blocked[k]=1;
-    const oppHands=[];let ok=true,anyDegraded=false;
-    for(let o=0;o<nOpp;o++){
-      let h=null;
-      if(useRanges){
-        const sampled=sampleFromRange(opponents[o],blocked);
-        if(sampled){ h=sampled.h; if(sampled.source==='wide') anyDegraded=true; }
-      }
-      if(!h){
-        const pool=deckAll.filter(function(c){return !blocked[cardStr(c)];});
-        if(pool.length<2){ok=false;break;}
-        const s=shuffle(pool);h=[s[0],s[1]];
-        anyDegraded=true;
-      }
-      blocked[cardStr(h[0])]=1;blocked[cardStr(h[1])]=1;
-      oppHands.push(h);
-    }
-    if(!ok) continue;
-    const pool=deckAll.filter(function(c){return !blocked[cardStr(c)];});
-    const run=shuffle(pool);
-    const b=board.slice();let ri=0;
-    while(b.length<5) b.push(run[ri++]);
-    const mine=evaluateBest(hole.concat(b));
-    // Track how many opponents share the best OPPONENT score, so a multiway
-    // tie (fix C6) can be split 1/k instead of always priced as half a win.
-    let bo=null,tiedOpps=0;
-    for(let o=0;o<oppHands.length;o++){
-      const s=evaluateBest(oppHands[o].concat(b));
-      const cmp=bo===null?1:cmpScore(s,bo);
-      if(cmp>0){bo=s;tiedOpps=1;}
-      else if(cmp===0)tiedOpps++;
-    }
-    const c=cmpScore(mine,bo);
-    if(c>0){win++;equitySum+=1;}
-    else if(c===0){tie++;equitySum+=1/(tiedOpps+1);}
-    if(anyDegraded) degraded++;
-    done++;
-  }
-  // Fix C3: a genuine 0% equity and "no trial could complete" must never be
-  // the same number -- the latter used to silently become the former and
-  // then flow into EV and bot decisions as if hero were drawing dead.
-  if(!done) return {win:0,tie:0,lose:0,equity:null,se:null,ok:false,degradedShare:1,reason:'no-completed-trials'};
-  const eqFrac=equitySum/done;
-  return {
-    win:100*win/done,tie:100*tie/done,lose:100*(done-win-tie)/done,
-    equity:100*eqFrac,
-    se:Math.sqrt(Math.max(0,eqFrac*(1-eqFrac))/done),
-    ok:true,
-    degradedShare:degraded/done
-  };
+  return calcEquityFor(hole,board,opponents,trials,useRanges,rangeIndex);
 }
 
 /* ============================================================
@@ -178,55 +57,11 @@ function calcEquity(hole,opponents,trials,useRanges){
    openPct/callPct/threeBetPct are fractions of all starting hands.
    polar drives how split their big-bet range is.
    ============================================================ */
-const PROFILES={
-  nit:     {label:'Nit',     openPct:0.16,callPct:0.14,threeBetPct:0.035,limpPct:0.03,
-            raiseRel:1.50,callBuffer:0.09,bluffFreq:0.05,sizing:0.55,maxRaises:2,
-            sigRaise:0.82,sigCall:0.48,polar:0.22,mixW:0.030,mixR:0.16,note:'folds a lot, only bets strong'},
-  tag:     {label:'TAG',     openPct:0.25,callPct:0.20,threeBetPct:0.070,limpPct:0.04,
-            raiseRel:1.22,callBuffer:0.04,bluffFreq:0.14,sizing:0.65,maxRaises:2,
-            sigRaise:0.70,sigCall:0.40,polar:0.55,mixW:0.035,mixR:0.18,note:'tight and aggressive'},
-  lag:     {label:'LAG',     openPct:0.37,callPct:0.30,threeBetPct:0.120,limpPct:0.07,
-            raiseRel:1.08,callBuffer:-0.03,bluffFreq:0.22,sizing:0.72,maxRaises:3,
-            sigRaise:0.55,sigCall:0.28,polar:0.72,mixW:0.045,mixR:0.22,note:'wide, applies pressure'},
-  station: {label:'Station', openPct:0.30,callPct:0.58,threeBetPct:0.020,limpPct:0.34,
-            raiseRel:1.82,callBuffer:-0.17,bluffFreq:0.02,sizing:0.42,maxRaises:1,
-            sigRaise:0.87,sigCall:0.08,polar:0.05,mixW:0.040,mixR:0.14,note:'calls too much, rarely raises'},
-  maniac:  {label:'Maniac',  openPct:0.56,callPct:0.62,threeBetPct:0.220,limpPct:0.12,
-            raiseRel:0.95,callBuffer:-0.21,bluffFreq:0.30,sizing:0.80,maxRaises:3,
-            sigRaise:0.33,sigCall:0.06,polar:0.85,mixW:0.055,mixR:0.26,note:'relentless, bluff-heavy'}
-};
-const COUNTER={
-  nit:{head:'Against a nit',
-    bullets:['They fold constantly \u2014 bluff them relentlessly, any size works.',
-             'When they finally raise, believe it. Fold everything but the near-nuts.',
-             'Value bet thin only against their calls, never against their raises.',
-             'Steal their blinds every orbit; they will not fight back.']},
-  tag:{head:'Against a TAG',
-    bullets:['The toughest seat. Their range is genuinely strong when they commit.',
-             'Bluff selectively \u2014 they fold enough to bet, but they do fight back.',
-             'Respect big raises; they are rarely bluffing for large sizes.',
-             'Attack their small bets: those are the weak part of their range.']},
-  lag:{head:'Against a LAG',
-    bullets:['They bet wide, so your bluff-catchers go up in value \u2014 call more.',
-             'Let them bluff into you. Check strong hands to induce.',
-             'Re-raise their thin value bets; they open far too many hands.',
-             'Do not try to out-bluff them; they call more than they look like they do.']},
-  station:{head:'Against a calling station',
-    bullets:['Never bluff. Not once. They call any size with any pair.',
-             'Value bet relentlessly and thinly \u2014 they pay off with far worse.',
-             'Bet BIGGER than feels comfortable when you are ahead; they still call.',
-             'When they raise, they have it. That is the one time to fold.']},
-  maniac:{head:'Against a maniac',
-    bullets:['Do not bluff \u2014 they call or re-raise regardless of what you represent.',
-             'Trap: check strong hands and let them barrel into you.',
-             'Widen your calling range; most of their aggression is air.',
-             'Sit tight and wait. Their variance does the work for you.']}
-};
-const HERO_PROF={sigRaise:0.70,sigCall:0.40,polar:0.55,bluffFreq:0.15,callBuffer:0.04};
-const PROFILE_KEYS=['nit','tag','lag','station','maniac'];
+// Profiles, hero's assumed profile and the profile keys all live in
+// opponentModel.js — the same table the coach and the opponent tips read.
 const SEAT_NAMES=['Marguerite','Idris','Sofia','Bernard','Kaz'];
 const POS_NAMES=['BTN','SB','BB','UTG','MP','CO'];
-const POS_MULT =[ 1.35, 0.95, 1.12, 0.60, 0.78, 1.05];
+// POS_MULT lives in botPolicy.js alongside the decisions that use it.
 
 /* ============================================================
    6. GAME STATE
@@ -390,13 +225,7 @@ function clearEquityTab(){
 }
 
 // Where hero sits, and whether that means acting last for the rest of the hand.
-function heroActsLast(){
-  const rank=function(i){const q=posOf(i);return q===0?6:q;};
-  const myRank=rank(0);
-  let last=true;
-  players.forEach(function(p,i){ if(!p.folded&&!p.isHero&&rank(i)>myRank) last=false; });
-  return last;
-}
+function heroActsLast(){ return D.heroActsLast(view()); }
 // What hero is actually holding: a made hand, or a draw chasing one.
 function heroShape(){
   const hero=players[0];
@@ -407,6 +236,50 @@ function heroShape(){
   if(shape.cardsToCome>=2) shape.riverOnlyEquity=outsToEquity(shape.outs,1,unseenCount(board)-1);
   shape.madeName=board.length>=3?handName(evaluateBest(hero.hole.concat(board))):null;
   return shape;
+}
+
+// The flat description of the spot that every advice surface is built from.
+// Returns null when there is nothing to describe. Whoever renders, renders this.
+function adviceSpot(){
+  const hero=players[0];
+  if(!handLive||hero.folded||!hero.hole.length) return null;
+  const opps=players.filter(function(p){return !p.folded&&!p.isHero;});
+  let main=opps[0];
+  opps.forEach(function(o){if((o.rLo||0)>(main.rLo||0))main=o;});
+  const spot=snapshotSpot();
+  // Fix C1/C7: same honest ranking as snapshotSpot -- check dominates fold, and
+  // options inside each other's error bars are grouped with the cheapest winning.
+  const best=rankOptions(spot.options).recommended;
+  const P=spot.pot;
+  let bestAggro=null;
+  spot.options.forEach(function(o){ if(o.fold!==undefined&&(!bestAggro||o.ev>bestAggro.ev)) bestAggro=o; });
+  const refB=bestAggro?bestAggro.amount:Math.max(BB,Math.round(P*0.75));
+  const oppInfo=opps.map(function(o){
+    return {name:o.name,response:respond(o,refB,P),rangeTopPct:rangeWidth(o),
+            airPct:100*(o.rBluff||0),styleLabel:profOf(o).label};
+  });
+  const eqR=lastEq?lastEq.eqR:null, eqU=lastEq?lastEq.eqU:null;
+  return {
+    streetName:STREETS[Math.min(street,4)],
+    toCall:spot.toCall,
+    pot:P,
+    rawEquity:eqU?eqU.equity/100:null,
+    rangeEquity:eqR?eqR.equity/100:spot.equity,
+    decisionEquity:spot.equity,
+    equitySe:eqR?eqR.se:null,
+    degradedShare:eqR?eqR.degradedShare:0,
+    trials:HERO_TRIALS,
+    opponents:oppInfo,
+    options:spot.options,
+    recommended:best,
+    revealStyles:showProfiles,
+    villain:oppInfo[opps.indexOf(main)],
+    field:fieldBreakdown(),
+    blockerPct:main?blockerPct(hero.hole,main):0,
+    shape:heroShape(),
+    position:{name:posName(0),actsLast:heroActsLast(),preflop:street===0,credit:positionalCredit()},
+    main:main,
+  };
 }
 
 function showCoach(){
@@ -421,7 +294,6 @@ function showCoach(){
   $('eqHidden').style.display='none';
   $('eqBody').classList.add('open');
   if(!lastEq) return;
-  const eqR=lastEq.eqR, eqU=lastEq.eqU;
   const opps=players.filter(function(p){return !p.folded&&!p.isHero;});
 
   let main=opps[0];
@@ -436,38 +308,9 @@ function showCoach(){
       (bl>0.02?'<div class="rb-bluff" style="width:'+(BLUFF_TOP*100)+'%;opacity:'+Math.min(1,bl*2.2)+'"></div>':'')+'</div>';
   } else $('rangeBar').innerHTML='';
 
-  const spot=snapshotSpot();
-  // Fix C1/C7: same honest ranking as snapshotSpot -- check dominates fold, and
-  // options inside each other's error bars are grouped with the cheapest winning.
-  const best=rankOptions(spot.options).recommended;
-  const P=spot.pot;
-  let bestAggro=null;
-  spot.options.forEach(function(o){ if(o.fold!==undefined&&(!bestAggro||o.ev>bestAggro.ev)) bestAggro=o; });
-  const refB=bestAggro?bestAggro.amount:Math.max(BB,Math.round(P*0.75));
-  const oppInfo=opps.map(function(o){
-    return {name:o.name,foldChance:foldChance(o,refB,P),rangeTopPct:rangeWidth(o),
-            airPct:100*(o.rBluff||0),styleLabel:PROFILES[o.profile].label};
-  });
-  const advice=buildCoachAdvice({
-    streetName:STREETS[Math.min(street,4)],
-    toCall:spot.toCall,
-    pot:P,
-    rawEquity:eqU.equity/100,
-    rangeEquity:eqR.equity/100,
-    decisionEquity:spot.equity,
-    equitySe:eqR.se,
-    degradedShare:eqR.degradedShare,
-    trials:HERO_TRIALS,
-    opponents:oppInfo,
-    options:spot.options,
-    recommended:best,
-    revealStyles:showProfiles,
-    villain:oppInfo[opps.indexOf(main)],
-    field:fieldBreakdown(),
-    blockerPct:blk,
-    shape:heroShape(),
-    position:{name:posName(0),actsLast:heroActsLast(),preflop:street===0,credit:positionalCredit()}
-  });
+  const flat=adviceSpot();
+  if(!flat) return;
+  const advice=buildCoachAdvice(flat);
   const CONF={'clear':'clear','solid':'best of the options','marginal':'close','toss-up':'your call'};
   $('coachVerdict').innerHTML=advice.verdict;
   $('coachConf').textContent=CONF[advice.clarity]||'';
@@ -475,11 +318,11 @@ function showCoach(){
   $('coachReason').innerHTML=advice.reason;
   $('coachPoints').innerHTML=advice.points.map(function(p){return '<li>'+p+'</li>';}).join('');
   $('coachLines').innerHTML=advice.lines.map(function(l){return '<p>'+l+'</p>';}).join('');
-  $('coachFreqBody').innerHTML='<table class="val-tab"><tr><th>action</th><th>EV</th><th>they fold</th></tr>'+
+  $('coachFreqBody').innerHTML='<table class="val-tab"><tr><th>action</th><th>EV</th><th>they fold</th><th>they raise</th></tr>'+
     advice.frequencies.map(function(f){
       const cls=f.recommended?'ev-pos':'';
       const tag=f.recommended?' ← pick':(f.tied?' <span class="fq-tied">= same call</span>':'');
-      return '<tr><td class="'+cls+'">'+f.label+tag+'</td><td class="'+cls+'">'+f.ev+'</td><td>'+(f.fold||'—')+'</td></tr>';
+      return '<tr><td class="'+cls+'">'+f.label+tag+'</td><td class="'+cls+'">'+f.ev+'</td><td>'+(f.fold||'—')+'</td><td>'+(f.raise||'—')+'</td></tr>';
     }).join('')+'</table>'+
     '<div class="mini-note">Frequencies, not commandments. Lines marked <b>= same call</b> rate about the same as the pick — the same decision in chips, and mixing between them is what stops you being readable.</div>';
   $('coachMathsBody').innerHTML=advice.maths.map(function(m){return '<div class="coach-maths-line">'+m+'</div>';}).join('')+
@@ -491,25 +334,11 @@ function showCoach(){
 /* ============================================================
    9. SIDE POTS
    ============================================================ */
-function buildSidePots(){
-  const contribs=players.filter(function(p){return p.committed>0;}).map(function(p){return {p:p,c:p.committed};});
-  const lv=contribs.map(function(x){return x.c;}).filter(function(v,i,a){return a.indexOf(v)===i;}).sort(function(a,b){return a-b;});
-  const pots=[];let prev=0;
-  for(let i=0;i<lv.length;i++){
-    const lvl=lv[i];let amt=0;
-    contribs.forEach(function(x){amt+=Math.min(x.c,lvl)-Math.min(x.c,prev);});
-    const elig=players.filter(function(p){return !p.folded&&p.committed>=lvl;});
-    if(amt>0) pots.push({amount:amt,eligible:elig});
-    prev=lvl;
-  }
-  const merged=[];
-  pots.forEach(function(p){
-    const last=merged[merged.length-1];
-    if(last&&last.eligible.length===p.eligible.length&&last.eligible.every(function(x,i){return x===p.eligible[i];})) last.amount+=p.amount;
-    else merged.push(p);
-  });
-  return merged;
-}
+// Side pots are built by table.js, which is where the headless harness tests
+// them. A pot layer above the highest commitment anyone still in the hand has
+// made has nobody eligible for it; the shared version folds that dead money
+// into the top layer instead of throwing. Found by the 10,000-hand backtest.
+function buildSidePots(){ return buildSidePotsFor(players); }
 function computeResult(){
   const pots=buildSidePots();
   const awards=[];
@@ -626,6 +455,14 @@ function advanceStreet(){
 
 /* ---- hero ---- */
 function potBefore(){return pot+players.reduce(function(s,p){return s+p.bet;},0);}
+// The read-only description of the table that decision.js works from. Built
+// fresh each call so it always reflects current state.
+function view(){
+  return {players:players,heroIndex:0,board:board,street:street,pot:pot,
+          currentBet:currentBet,minRaise:minRaise,dealerIdx:dealerIdx,
+          bigBlind:BB,streetRaises:streetRaises,rangeIndex:rangeIndex,rng:Math.random,
+          calledTrials:CALLED_TRIALS,equityTrials:520};
+}
 function heroFold(){
   const h=players[0];h.folded=true;h.acted=true;
   if(street===0&&hf.raisedPre&&currentBet>h.bet&&!hf.f3bCounted){stats.f3bOpp++;stats.f3b++;hf.f3bCounted=true;}
@@ -710,78 +547,48 @@ function botCall(p,toCall){
   narrowCall(p);
   setBadge(p,'call '+toCall,'b-passive');log(p.name+' calls '+toCall);
 }
+// Both decisions are made by botPolicy.js — the same pure functions the
+// calibration harness drives. These only translate the answer into table
+// actions, so what the app plays and what the harness measures cannot diverge.
 function preflopAct(p){
-  const prof=PROFILES[p.profile];
   const idx=players.indexOf(p);
-  const pct=handPercentile(p.hole);
-  const liveOpp=players.filter(function(x){return !x.folded&&x!==p;}).length;
-  // as the field shrinks, both stealing and defending open up a lot
-  const fieldBoost=clamp(1+0.30*(4-liveOpp),1,2.1);
-  const pm=posMult(idx)*fieldBoost;
+  const d=decidePreflop({
+    prof:PROFILES[p.profile],
+    pct:handPercentile(p.hole),
+    liveOpp:players.filter(function(x){return !x.folded&&x!==p;}).length,
+    posMult:posMult(idx), pos:posOf(idx),
+    toCall:Math.min(currentBet-p.bet,p.stack),
+    currentBet:currentBet, minRaise:minRaise, bigBlind:BB,
+    streetRaises:streetRaises, raises:p.raises, mayRaise:p.mayRaise,
+    rng:Math.random,
+  });
   const toCall=Math.min(currentBet-p.bet,p.stack);
-  const unopened=(streetRaises===0);
-  const pos=posOf(idx);
-  const w=prof.mixW;
-  if(unopened){
-    const openThresh=1-clamp(prof.openPct*pm,0.02,0.94);
-    if(p.raises<prof.maxRaises&&Math.random()<sigmoid((pct-openThresh)/w)){
-      const open=Math.round(BB*(2.2+Math.random()*1.1));
-      return applyBotRaise(p,Math.max(open,currentBet+minRaise),toCall,'raise to');
-    }
-    if(toCall<=0) return botCheck(p);
-    // the small blind is getting 3:1 to complete, so it almost never folds a playable hand
-    const oddsBoost=(pos===1&&toCall<BB)?2.4:1;
-    const limpThresh=1-clamp((prof.limpPct+prof.openPct*0.6)*pm*oddsBoost,0.02,0.96);
-    if(Math.random()<sigmoid((pct-limpThresh)/w)) return botCall(p,toCall);
-    return botFold(p);
-  }
-  const tbThresh=1-clamp(prof.threeBetPct*Math.max(1,fieldBoost*0.8),0.01,0.6);
-  if(p.raises<prof.maxRaises&&streetRaises<4&&p.mayRaise&&Math.random()<sigmoid((pct-tbThresh)/(w*0.8))){
-    return applyBotRaise(p,Math.round(currentBet*(2.6+Math.random()*0.8)),toCall,'raise to');
-  }
-  if(toCall<=0) return botCheck(p);
-  // the big blind already has money in, so it defends much wider
-  const defBoost=(pos===2)?1.4:1;
-  const callThresh=1-clamp(prof.callPct*pm*defBoost,0.02,0.96);
-  if(Math.random()<sigmoid((pct-callThresh)/w)) return botCall(p,toCall);
+  if(d.action==='raise') return applyBotRaise(p,d.target,toCall,'raise to');
+  if(d.action==='call') return botCall(p,toCall);
+  if(d.action==='check') return botCheck(p);
   return botFold(p);
 }
 function postflopAct(p){
-  const prof=PROFILES[p.profile];
   const potNow=potBefore();
   const toCall=Math.min(currentBet-p.bet,p.stack);
   const contesting=players.filter(function(x){return !x.folded&&x!==p&&(x.bet>0||x.allIn);});
   const liveOpp=players.filter(function(x){return !x.folded&&x!==p;});
   const refOpp=(toCall>0&&contesting.length)?contesting:liveOpp;
   const eq=calcEquity(p.hole,refOpp,BOT_TRIALS,true);
-  // Fix C3: no completed trial must not read as "definitely behind" -- take
-  // the passive line instead of letting a fabricated 0% drive the decision.
+  // No completed trial must not read as "definitely behind" -- take the
+  // passive line instead of letting a fabricated 0% drive the decision.
   if(!eq.ok) return toCall>0?botFold(p):botCheck(p);
-  const strength=eq.equity/100;
-  const nRef=Math.max(1,refOpp.length);
-  const fair=1/(nRef+1),rel=strength/fair;
-  const potOdds=toCall>0?toCall/(potNow+toCall):0;
-  const canRaise=p.raises<prof.maxRaises&&streetRaises<4&&p.mayRaise;
-  const w=prof.mixR;
-  let bluff=prof.bluffFreq/Math.max(1,nRef*0.6);
-  if(toCall>0) bluff*=0.4;
-  const size=function(mult){return Math.max(BB,Math.round(potNow*prof.sizing*mult));};
-
-  if(toCall<=0){
-    const pBet=sigmoid((rel-prof.raiseRel)/w);
-    if(canRaise&&(Math.random()<pBet||Math.random()<bluff)){
-      const isBluff=strength<0.35;
-      return applyBotRaise(p,size(isBluff?1.15:0.85+Math.random()*0.4),toCall,'bet');
-    }
-    return botCheck(p);
-  }
-  const pRaise=sigmoid((rel-prof.raiseRel)/w)*0.65;
-  if(canRaise&&Math.random()<pRaise){
-    return applyBotRaise(p,Math.round(currentBet*(2.2+Math.random()*0.9)),toCall,'raise to');
-  }
-  const pCall=sigmoid((strength-(potOdds+prof.callBuffer))/0.055);
-  if(Math.random()<pCall) return botCall(p,toCall);
-  if(canRaise&&Math.random()<bluff*0.5) return applyBotRaise(p,size(1.1),toCall,'raise to');
+  const prof=PROFILES[p.profile];
+  const d=decidePostflop({
+    prof:prof, strength:eq.equity/100, nRef:refOpp.length,
+    toCall:toCall, potNow:potNow, currentBet:currentBet, bigBlind:BB,
+    canRaise:p.raises<prof.maxRaises&&streetRaises<4&&p.mayRaise,
+    rng:Math.random,
+  });
+  if(d.action==='bet') return applyBotRaise(p,d.target,toCall,'bet');
+  if(d.action==='raise') return applyBotRaise(p,d.target,toCall,'raise to');
+  if(d.action==='call') return botCall(p,toCall);
+  if(d.action==='check') return botCheck(p);
   return botFold(p);
 }
 function botAct(p){
@@ -955,65 +762,15 @@ function classify(){
    uniform over [rLo,1] plus a bluff band, so the fraction that folds
    to a given size can be read straight off the range, no simulation.
    ============================================================ */
-function projectedHeroRep(B,P){
-  const h=players[0];
-  const sr=clamp(B/Math.max(1,P),0.15,3.0);
-  const tighten=HERO_PROF.sigRaise+0.13*(sr-0.62);
-  const pol=clamp(HERO_PROF.polar*(0.55+0.62*Math.min(sr,2)),0,0.92);
-  return {rLo:Math.max(h.rLo||0,clamp(tighten,0,0.93)),
-          rBluff:Math.max(h.rBluff||0,clamp(pol*HERO_PROF.bluffFreq*2.4,0,0.42))};
-}
-// Probability every opponent folds to a bet of B into P.
-// Price elasticity matters: a bigger bet demands a stronger hand to continue,
-// which is what stops "always shove" from being the answer with a strong hand.
-function foldChancePre(o,betSize){
-  const lo=o.rLo||0, width=1-lo;
-  if(width<=0) return 0;
-  const contin=1-continueThresholdPre(o,betSize);
-  return clamp(1-contin/width,0,0.94);
-}
-// The quantile above which they keep playing. Everything from here up is their
-// CALLING range -- which is what hero's hand actually has to beat once a bet
-// gets called, and is strictly stronger than their whole range.
-function continueThresholdPre(o,betSize){
-  const prof=o.isHero?HERO_PROF:PROFILES[o.profile];
-  const facing=Math.max(BB,currentBet);
-  const ratio=betSize/facing;
-  // negative callBuffer means they call more, so they keep more of their range
-  const keep=clamp(0.62*Math.pow(Math.max(1,ratio),-0.75)-(prof.callBuffer||0)*1.6,0.06,0.95);
-  const lo=o.rLo||0, width=1-lo;
-  if(width<=0) return lo;
-  const contin=Math.min(width,keep*width+0.015);
-  return clamp(1-contin,0,0.995);
-}
-function continueThreshold(o,betSize,potSize){
-  if(street===0) return continueThresholdPre(o,betSize);
-  const prof=o.isHero?HERO_PROF:PROFILES[o.profile];
-  const rep=projectedHeroRep(betSize,potSize);
-  const need=betSize/(potSize+2*betSize);
-  const s=rep.rBluff;
-  const beatNeed=clamp((need-s)/Math.max(1e-6,1-s),0,1);
-  const elastic=clamp(0.15*Math.log(1+betSize/Math.max(1,potSize)),0,0.20);
-  return clamp(rep.rLo+beatNeed*(1-rep.rLo)*0.55+elastic+(prof.callBuffer||0),0,0.995);
-}
-function foldChance(o,betSize,potSize){
-  if(street===0) return foldChancePre(o,betSize);
-  const t=continueThreshold(o,betSize,potSize);
-  const lo=o.rLo||0, bl=o.rBluff||0;
-  const below=function(x,a,b){return clamp((x-a)/Math.max(1e-6,b-a),0,1);};
-  return (1-bl)*below(t,lo,1)+bl*below(t,0,BLUFF_TOP);
-}
+// Everything about "what will they do if I bet" is one call into decision.js,
+// which in turn calls opponentModel.js. One answer, one place.
+function respond(o,betSize,potSize){ return D.respond(view(),o,betSize,potSize); }
+function foldChance(o,betSize,potSize){ return D.foldChance(view(),o,betSize,potSize); }
 // Equity against the hands that would actually call a bet of this size. A caller
 // holds the top of their range, and almost never pure air, so this is lower than
 // unconditional equity -- and it falls further the bigger the bet. Without it,
 // EV(bet) rises with size almost without limit and every spot recommends a raise.
-function equityIfCalled(hole,opps,betSize,potSize,trials){
-  const tightened=opps.map(function(o){
-    return {rLo:Math.max(o.rLo||0,continueThreshold(o,betSize,potSize)),
-            rBluff:(o.rBluff||0)*0.30};
-  });
-  return calcEquity(hole,tightened,trials,true);
-}
+function equityIfCalled(hole,opps,betSize,potSize,trials){ return D.equityIfCalled(view(),hole,opps,betSize,potSize,trials); }
 function renderFoldEquity(){
   const hero=players[0];
   const opps=players.filter(function(p){return !p.folded&&!p.isHero;});
@@ -1026,15 +783,16 @@ function renderFoldEquity(){
     const B=Math.round(P*sz[0]);
     if(B<BB||B>hero.stack) return;
     const need=B/(P+B);
-    let pf=1;
-    opps.forEach(function(o){pf*=foldChance(o,B,P);});
+    const resp=jointResponse(opps.map(function(o){ return respond(o,B,P); }));
+    const pf=resp.fold;
     const ok=pf>=need;
     rows+='<tr><td>'+sz[1]+'</td><td>'+B+'</td><td>'+(100*need).toFixed(0)+'%</td>'+
-      '<td class="'+(ok?'fe-good':'fe-bad')+'">'+(100*pf).toFixed(0)+'%</td></tr>';
+      '<td class="'+(ok?'fe-good':'fe-bad')+'">'+(100*pf).toFixed(0)+'%</td>'+
+      '<td>'+(100*resp.raise).toFixed(0)+'%</td></tr>';
   });
   if(!rows){el.innerHTML='';return;}
-  el.innerHTML='<table class="fe-tab"><tr><th>bet</th><th>risk</th><th>need fold</th><th>they fold</th></tr>'+rows+
-    '</table><div class="mini-note">If "they fold" beats "need fold", the bet shows a profit on fold equity alone \u2014 before your hand ever has to win.</div>';
+  el.innerHTML='<table class="fe-tab"><tr><th>bet</th><th>risk</th><th>need fold</th><th>they fold</th><th>they raise</th></tr>'+rows+
+    '</table><div class="mini-note">If "they fold" beats "need fold", the bet shows a profit on fold equity alone \u2014 before your hand ever has to win. "They raise" is how often that bet comes back at you instead, which is the part a fold percentage on its own never shows.</div>';
 }
 
 /* ============================================================
@@ -1084,9 +842,6 @@ function counterfactualHTML(){
 /* ============================================================
    13d. TABLE IMAGE + PER-STREET RANGE GUESS
    ============================================================ */
-function rangeWidth(o){
-  return (((1-(o.rLo||0))*(1-(o.rBluff||0)))+BLUFF_TOP*(o.rBluff||0))*100;
-}
 function renderHeroImage(){
   const h=players[0];
   const el=$('heroImage');
@@ -1156,178 +911,22 @@ function renderDrift(){
      call  : win the pot that was there, or lose what you put in
      bet   : they fold and you take it, or you play a bigger pot
    ============================================================ */
-function evOfCall(e,P,C){ return e*P-(1-e)*C; }
-function evOfBet(e,P,B,f){ return f*P+(1-f)*(e*(P+B)-(1-e)*B); }
-// Equity is Monte Carlo, so it carries a standard error; these push that
-// error through the EV formulas (d/de of each above) so EV can be reported
-// with the precision it actually has (fix C7).
-function evCallSe(P,C,eSe){ return (eSe==null)?null:(P+C)*eSe; }
-// The fold estimate is the least reliable input in the whole model: it is a
-// heuristic over a quantile range, not a measurement, and a bigger bet
-// extrapolates it further from anything the opponent has actually shown. Pricing
-// it as certain is what made large bets look strictly better than small ones.
-function foldSe(B,P){ return 0.03+0.03*Math.min(2,B/Math.max(1,P)); }
-function evBetSe(P,B,f,eSe,e){
-  const fromE=(eSe==null)?0:(1-f)*(P+2*B)*eSe;
-  const called=(e==null)?0:(e*(P+B)-(1-e)*B);
-  const fromF=Math.abs(P-called)*foldSe(B,P);      // d/df of f*P + (1-f)*called
-  return Math.sqrt(fromE*fromE+fromF*fromF);
-}
-// Rank the available actions honestly. Two rules beyond raw EV order:
-//  a) options whose error bars overlap the leader's are indistinguishable;
-//     among those, the one risking fewest chips is recommended (fix C7).
-//  b) fold is never recommended when checking is legal -- checking weakly
-//     dominates folding (you can always fold later for free), so a strict
-//     ">" tie-break that let both settle at 0 and picked whichever came
-//     first was wrong (fix C1).
-function rankOptions(opts){
-  if(!opts||!opts.length) return {ranked:[],recommended:null,band:[]};
-  const ranked=opts.slice().sort(function(a,b){
-    const d=b.ev-a.ev;
-    if(Math.abs(d)>1e-9) return d;
-    return (a.amount||0)-(b.amount||0);
-  });
-  const leader=ranked[0];
-  const lse=leader.evSe||0;
-  const band=ranked.filter(function(o){
-    if(o===leader) return true;
-    const ose=o.evSe||0;
-    const combined=Math.sqrt(lse*lse+ose*ose);
-    return (leader.ev-o.ev)<=combined+1e-9;
-  });
-  let recommended=leader;
-  if(band.length>1){
-    recommended=band.slice().sort(function(a,b){return (a.amount||0)-(b.amount||0);})[0];
-  }
-  if(recommended.label==='fold'){
-    const check=ranked.filter(function(o){return o.label==='check';})[0];
-    if(check) recommended=check;
-  }
-  return {ranked:ranked,recommended:recommended,band:band};
-}
+// EV formulas, their standard errors and the response model behind them all
+// live in opponentModel.js.
+const rankOptions=D.rankOptions;
 
 let handDecisions=[];   // every hero decision this hand
 let heroStackStart=START_STACK;
 let evRecords=[];       // one entry per hand, persisted
 
-// Measure against opponents who actually have chips in beyond the blinds.
-// Counting players still to act as if they were all calling understates equity
-// badly - it is the same bug that made the bots fold everything in v3.
-function contestingOpps(){
-  const live=players.filter(function(p){return !p.folded&&!p.isHero;});
-  if(!live.length) return live;
-  if(currentBet<=0) return live;
-  const inFor=live.filter(function(p){return p.bet>=currentBet-0.01||p.allIn;});
-  const toAct=live.filter(function(p){return inFor.indexOf(p)<0;});
-  // Players yet to act will mostly fold, but not all of them. Estimate how many
-  // actually continue, and measure equity against that many. Equity and fold
-  // probability must be computed over the SAME opponents or the two disagree.
-  let expected=0;
-  toAct.forEach(function(o){ expected+=(1-foldChance(o,Math.max(BB,currentBet),potBefore())); });
-  const extra=toAct.slice(0,Math.max(0,Math.round(expected)));
-  const set=inFor.concat(extra);
-  return set.length?set:live.slice(0,1);
-}
-// The prose and the maths must count the same people. contestingOpps() prices
-// EV against those expected to keep going, which can be fewer than the players
-// still in -- so the coach is told both numbers and how many folds sit between
-// them, instead of saying "4 players are still in" over maths priced against 2.
-function fieldBreakdown(){
-  const live=players.filter(function(p){return !p.folded&&!p.isHero;});
-  let expectedFolds=0;
-  if(currentBet>0){
-    const inFor=live.filter(function(p){return p.bet>=currentBet-0.01||p.allIn;});
-    live.forEach(function(o){
-      if(inFor.indexOf(o)<0) expectedFolds+=foldChance(o,Math.max(BB,currentBet),potBefore());
-    });
-  }
-  return {live:live.length,contesting:contestingOpps().length,expectedFolds:expectedFolds};
-}
-// Acting last is worth real money: you see their action before deciding on every
-// later street. A single-street equity number cannot express that, so we credit it
-// explicitly. ~3.5 points in position, less as the field grows.
-function positionalCredit(){
-  const live=players.filter(function(p){return !p.folded&&!p.isHero;});
-  if(!live.length) return 0;
-  // postflop action order: SB, BB, UTG, MP, CO, BTN. The button (posOf 0) acts LAST.
-  const rank=function(i){const q=posOf(i);return q===0?6:q;};
-  const myRank=rank(0);
-  let last=true;
-  players.forEach(function(p,i){ if(!p.folded&&!p.isHero&&rank(i)>myRank) last=false; });
-  const streetsLeft=Math.max(0,3-street);
-  if(!streetsLeft) return 0;
-  const base=last?0.035:-0.015;
-  return base*(streetsLeft/3)/Math.max(1,live.length*0.55);
-}
-function heroEquityNow(){
-  const opps=contestingOpps();
-  if(!opps.length) return {e:1,se:0,degraded:false};
-  const eq=calcEquity(players[0].hole,opps,520,true);
-  // Fix C3: no completed trial is not the same fact as 0% equity. Fall back
-  // to a neutral fair-share estimate with no uncertainty claim rather than
-  // letting a fabricated 0 flow into EV.
-  if(!eq.ok) return {e:1/(opps.length+1),se:null,degraded:true};
-  return {e:clamp(eq.equity/100+positionalCredit(),0,1),se:eq.se,degraded:(eq.degradedShare||0)>0.02};
-}
+// Field composition, the positional credit and hero's equity are all priced by
+// decision.js so the coach panel and the headless backtest agree exactly.
+function contestingOpps(){ return D.contestingOpps(view()); }
+function fieldBreakdown(){ return D.fieldBreakdown(view()); }
+function positionalCredit(){ return D.positionalCredit(view()); }
+function heroEquityNow(){ return D.heroEquityNow(view()); }
 function nOppLive(){return players.filter(function(p){return !p.folded&&!p.isHero;}).length;}
-function snapshotSpot(){
-  const h=players[0];
-  const P=potBefore();
-  const C=Math.min(currentBet-h.bet,h.stack);
-  const ref=contestingOpps();
-  const eq=heroEquityNow();
-  const e=eq.e;
-  const opts=[];
-  opts.push({label:'fold',ev:0,amount:0,evSe:0});
-  if(C>0) opts.push({label:'call '+C,ev:evOfCall(e,P,C),amount:C,evSe:evCallSe(P,C,eq.se)});
-  else opts.push({label:'check',ev:0,amount:0,evSe:0});
-  // Build the candidate sizes first, so conditional equity can be anchored at
-  // the smallest and largest of them and interpolated in between -- two Monte
-  // Carlo runs instead of one per size.
-  const sizes=[];
-  [[0.33,'\u2153 pot'],[0.5,'\u00bd pot'],[0.75,'\u00be pot'],[1,'pot'],[1.5,'1.5\u00d7 pot']].forEach(function(sz){
-    // A raise must reach at least currentBet + minRaise. Size the pot fraction
-    // off the pot AFTER calling, which is how raise sizing actually works.
-    let target;
-    if(C>0) target=Math.round(currentBet+sz[0]*(P+C));
-    else target=Math.round(P*sz[0]);
-    target=Math.max(target,currentBet+minRaise);
-    target=Math.min(target,h.bet+h.stack);
-    const B=target-h.bet;                       // chips hero actually adds
-    if(B<BB||B>h.stack) return;
-    if(opts.some(function(o){return o.amount===B;})) return;
-    if(sizes.some(function(x){return x.B===B;})) return;
-    sizes.push({B:B,target:target,label:sz[1]});
-  });
-  if(sizes.length&&ref.length){
-    const meanT=function(B){
-      let t=0; ref.forEach(function(o){ t+=continueThreshold(o,B,P); });
-      return t/ref.length;
-    };
-    const lo=sizes[0], hi=sizes[sizes.length-1];
-    const eqLo=equityIfCalled(h.hole,ref,lo.B,P,CALLED_TRIALS);
-    const eqHi=(sizes.length>1)?equityIfCalled(h.hole,ref,hi.B,P,CALLED_TRIALS):eqLo;
-    const tLo=meanT(lo.B), tHi=meanT(hi.B), tSpan=tHi-tLo;
-    sizes.forEach(function(sz){
-      let f=1;
-      ref.forEach(function(o){ f*=foldChance(o,sz.B,P); });
-      // equity conditional on being called, interpolated by how much this size
-      // narrows their continuing range
-      let eCalled;
-      if(!eqLo.ok||!eqHi.ok) eCalled=e;
-      else{
-        const w=(Math.abs(tSpan)<1e-6)?0:clamp((meanT(sz.B)-tLo)/tSpan,0,1);
-        eCalled=clamp((eqLo.equity+(eqHi.equity-eqLo.equity)*w)/100,0,1);
-      }
-      const allIn=(sz.B>=h.stack);
-      opts.push({label:allIn?('all in '+sz.target):((C>0?'raise to ':'bet ')+sz.target+' ('+sz.label+')'),
-        ev:evOfBet(eCalled,P,sz.B,f),amount:sz.B,target:sz.target,fold:f,n:ref.length,
-        eCalled:eCalled,evSe:evBetSe(P,sz.B,f,eqLo.ok?eqLo.se:eq.se,eCalled)});
-    });
-  }
-  const best=rankOptions(opts).recommended;
-  return {street:street,equity:e,equitySe:eq.se,degraded:eq.degraded,pot:P,toCall:C,options:opts,best:best};
-}
+function snapshotSpot(){ return D.snapshotSpot(view()); }
 function recordDecision(kind,amount){
   if(!heroSpot) return;
   let opt=null,label=kind;
@@ -1344,9 +943,10 @@ function recordDecision(kind,amount){
     });
     // a size larger than any modelled option: price it directly
     if(opt&&amount>opt.amount*1.35){
-      let f=1;
-      players.forEach(function(o2){ if(!o2.folded&&!o2.isHero) f*=foldChance(o2,amount,heroSpot.pot); });
-      opt={label:kind+' '+amount,ev:evOfBet(heroSpot.equity,heroSpot.pot,amount,f),amount:amount,fold:f};
+      const live=players.filter(function(o2){ return !o2.folded&&!o2.isHero; });
+      const resp=jointResponse(live.map(function(o2){ return respond(o2,amount,heroSpot.pot); }));
+      opt={label:kind+' '+amount,ev:evOfBet(heroSpot.equity,heroSpot.pot,amount,resp),
+           amount:amount,fold:resp.fold,raise:resp.raise};
       if(opt.ev>heroSpot.best.ev) heroSpot.best=opt;
     }
     label=(opt?opt.label:kind+' '+amount);
@@ -1507,7 +1107,7 @@ function valueCurve(){
     const B=Math.round(P*sz[0]);
     if(B<BB||B>hero.stack) return;
     let f=1;
-    opps.forEach(function(o){ f*=foldChance(o,B,P); });
+    opps.forEach(function(o){ f*=respond(o,B,P).fold; });
     // Getting paid is priced against the hands that actually call, not against
     // their whole range -- otherwise the biggest size always looks the best.
     const eqC=equityIfCalled(hero.hole,opps,B,P,CALLED_TRIALS);
@@ -1563,8 +1163,12 @@ function renderCounterTips(){
     if(b) b.addEventListener('click',function(){tipsOpen=true;renderCounterTips();});
     return;
   }
-  const c=COUNTER[main.profile];
-  el.innerHTML='<div class="ct-wrap"><div class="ct-head">'+c.head.replace('a ',main.name+' is a ')+'</div>'+
+  // Derived from the same model the coach reads, so these bullets cannot
+  // contradict the recommendation the way a hand-written table of tips did.
+  const flat=adviceSpot();
+  const c=flat?buildSpotModel(flat).counter:null;
+  if(!c){el.innerHTML='';return;}
+  el.innerHTML='<div class="ct-wrap"><div class="ct-head">'+c.head+'</div>'+
     '<ul class="ct-list">'+c.bullets.map(function(b){return '<li>'+b+'</li>';}).join('')+'</ul>'+
     (showProfiles?'':'<button class="ct-toggle" id="ctHide">Hide</button>')+'</div>';
   const hb=$('ctHide');

@@ -183,3 +183,21 @@ Open an issue, or use the **Send feedback** panel at the bottom of the app.
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
+
+## Testing
+
+`npm test` runs the unit and advice-consistency suites (~40s).
+
+Two simulation harnesses play the game headlessly and measure it:
+
+```bash
+npm run sim:calibrate    # does the fold model predict what the bots do?
+npm run sim:backtest     # is following the coach worth chips over 10,000 hands?
+npm run sim:tune         # re-fit the model parameters to the bots
+npm run sim:compare      # did a model change help? before/after on the same hands
+npm run sim              # calibration + backtest
+```
+
+See **[TESTING.md](TESTING.md)** for how to read the output, how to run more
+hands, and the current measured results.
+

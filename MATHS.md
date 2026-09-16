@@ -177,13 +177,27 @@ When you win you collect the pot *that was already there* ($P$) — your own cal
 
 ### Betting or raising
 
-Two branches — they fold, or they don't:
+**Three** branches, not two. They fold, they call, or they come back over the top:
 
-$$\mathrm{EV}_{\text{bet}} = \underbrace{f \cdot P}_{\text{they fold}} + \underbrace{(1-f)\Big[e(P+B) - (1-e)B\Big]}_{\text{they call}}$$
+$$\mathrm{EV}_{\text{bet}} = \underbrace{f \cdot P}_{\text{they fold}} + \underbrace{c\Big[e(P+B) - (1-e)B\Big]}_{\text{they call}} + \underbrace{r \cdot (-B)}_{\text{they raise}}$$
 
-Algebraically identical to $f P + (1-f)[e(P+2B) - B]$; the app uses the first form because each term maps to something you can reason about.
+with $f + c + r = 1$. The raise branch prices hero as folding to the re-raise and forfeiting the $B$ already committed — the conservative reading, and the honest one for a hand that raised without a plan for getting jammed on.
 
-This decomposition is the entire argument for aggression: **betting has two ways to win** (they fold, or you have the best hand), calling has one. That's why $\mathrm{EV}_{\text{bet}}$ can beat $\mathrm{EV}_{\text{call}}$ even when $e$ is small.
+> The app originally modelled only two branches, treating everything that was not a fold as a call ($c = 1-f$, $r = 0$). That is fine against a passive opponent and badly wrong against an aggressive one: it prices a raise into the player most likely to blast it back as though the worst case were a flat call. It also made a re-raise look free precisely where it is most expensive. The bots have always had a re-raise branch (`postflopAct`'s `pRaise`), so the advice was pricing a different game from the one being simulated.
+
+This decomposition is still the argument for aggression — **betting has two ways to win** (they fold, or you have the best hand) where calling has one — but the third branch is what stops that argument from running away with itself.
+
+### Where $f$, $c$ and $r$ come from
+
+Each opponent's range is uniform over $[\ell, 1]$ plus a bluff band over $[0, 0.34]$ of width $\beta$. Their value hands continue above a threshold $t$ set by the price, hero's represented range and their own `callBuffer`. Their **air** is priced separately, on appetite rather than on card strength:
+
+$$\text{airContinue} = \text{airPersistence} \cdot \mathrm{clamp}\!\left(1 - 0.28\ln\!\left(1 + \tfrac{B}{P}\right),\ 0.35,\ 1\right)$$
+
+$$f = (1-\beta)\,\Pr[\text{value folds}] + \beta\,(1 - \text{airContinue})$$
+
+$$r = (1-f)\cdot\text{reRaiseShare}, \qquad c = 1 - f - r$$
+
+> The bug this replaced: air was run through the same card-strength threshold as value hands. Since $t$ sits well above the top of the bluff band in almost every spot, **100% of a player's air folded to any bet**. The more a style bluffed, the more air it held, and therefore the easier it was to bluff — exactly backwards. A maniac who had raised showed 42% air and was scored as folding **73%** of the time to a half-pot re-raise, while a calling station scored **0%**. With air priced on appetite, the same maniac folds about 46% and the ordering follows stickiness (`callBuffer`) as it should.
 
 ### Decision cost
 

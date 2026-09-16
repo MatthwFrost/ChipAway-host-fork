@@ -8,7 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sim": "node src/harness/run.js all",
+    "sim:calibrate": "node src/harness/run.js calibrate",
+    "sim:backtest": "node src/harness/run.js backtest",
+    "test:sim": "vitest run src/harness",
+    "sim:tune": "node src/harness/run.js tune",
+    "sim:compare": "node src/harness/compare.js",
+    "sim:sweep": "node src/harness/sweep.js"
   },
   "dependencies": {
     "react": "^19.1.1",
