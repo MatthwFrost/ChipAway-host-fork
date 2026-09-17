@@ -28,6 +28,14 @@ const iso = function (ms) { return ms ? new Date(ms).toISOString() : null; };
 const isoRequired = function (v) { return iso(v) || new Date().toISOString(); };
 const ms = function (s) { return s ? new Date(s).getTime() : null; };
 
+// supabase-js resolves { data, error } for an API-level failure but REJECTS
+// the promise for a transport-level one (offline, DNS, CORS, an aborted
+// request). Every direct call below is wrapped so that path still comes out
+// the documented { games, hands, error } / { pushed, pulled, error } shape
+// instead of an escaped exception -- see auth.js for the getUser() side of
+// this, which push()/pull() reach through requireUser().
+const NETWORK_ERROR = "Can't reach the server. Check your connection and try again.";
+
 const evCostOf = function (hand) {
   return (hand.decisions || []).reduce(function (a, d) { return a + Math.max(0, d.cost || 0); }, 0);
 };
@@ -110,7 +118,12 @@ export async function push(presetUser) {
 
   if (games.length) {
     const rows = games.map(function (g) { return toGameRow(g, user.id); });
-    const res = await supabase.from('games').upsert(rows, { onConflict: 'user_id,id' });
+    let res;
+    try {
+      res = await supabase.from('games').upsert(rows, { onConflict: 'user_id,id' });
+    } catch (e) {
+      return { games: 0, hands: 0, error: NETWORK_ERROR };
+    }
     if (res.error) return { games: 0, hands: 0, error: res.error.message };
     pushedGames = rows.length;
   }
@@ -119,8 +132,13 @@ export async function push(presetUser) {
     const rows = hands.map(function (h) { return toHandRow(h, user.id); });
     // ignoreDuplicates: a recorded hand never changes, so re-sending one is a
     // no-op rather than an overwrite.
-    const res = await supabase.from('hands')
-      .upsert(rows, { onConflict: 'user_id,id', ignoreDuplicates: true });
+    let res;
+    try {
+      res = await supabase.from('hands')
+        .upsert(rows, { onConflict: 'user_id,id', ignoreDuplicates: true });
+    } catch (e) {
+      return { games: pushedGames, hands: 0, error: NETWORK_ERROR };
+    }
     if (res.error) return { games: pushedGames, hands: 0, error: res.error.message };
     pushedHands = rows.length;
   }
@@ -135,11 +153,21 @@ export async function pull(presetUser) {
     if (required.error) return { games: 0, hands: 0, error: required.error };
   }
 
-  const gameRes = await supabase.from('games').select('*');
+  let gameRes;
+  try {
+    gameRes = await supabase.from('games').select('*');
+  } catch (e) {
+    return { games: 0, hands: 0, error: NETWORK_ERROR };
+  }
   if (gameRes.error) return { games: 0, hands: 0, error: gameRes.error.message };
   const mergedGames = mergeGames((gameRes.data || []).map(fromGameRow));
 
-  const handRes = await supabase.from('hands').select('*');
+  let handRes;
+  try {
+    handRes = await supabase.from('hands').select('*');
+  } catch (e) {
+    return { games: mergedGames, hands: 0, error: NETWORK_ERROR };
+  }
   if (handRes.error) return { games: mergedGames, hands: 0, error: handRes.error.message };
   const mergedHands = mergeHands((handRes.data || []).map(fromHandRow).filter(Boolean));
 

@@ -33,6 +33,11 @@ export function SignInScreen({ onSignedIn, onGuest }) {
         return;
       }
       if (res.user) onSignedIn(res.user);
+    } catch (e) {
+      // Belt and braces: auth.js already catches transport failures and
+      // returns them as res.error above, but if a future caller ever throws
+      // instead, the player still sees something rather than a frozen form.
+      setError('Something went wrong. Try again.');
     } finally {
       setBusy(false);
     }

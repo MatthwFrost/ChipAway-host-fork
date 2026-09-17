@@ -44,6 +44,13 @@ describe('sign in', () => {
     expect(res.error).toBe('Enter your email and password.');
     expect(mockAuth.signInWithPassword).not.toHaveBeenCalled();
   });
+
+  test('turns a rejected (transport-level) call into a readable error instead of throwing', async () => {
+    mockAuth.signInWithPassword.mockRejectedValue(new TypeError('Failed to fetch'));
+    const res = await auth.signIn('a@b.com', 'pw');
+    expect(res.user).toBeNull();
+    expect(res.error).toBe("Can't reach the server. Check your connection and try again.");
+  });
 });
 
 describe('sign up', () => {
@@ -65,6 +72,14 @@ describe('sign up', () => {
     const res = await auth.signUp('a@b.com', 'short');
     expect(res.error).toBe('Use a password of at least 8 characters.');
     expect(mockAuth.signUp).not.toHaveBeenCalled();
+  });
+
+  test('turns a rejected (transport-level) call into a readable error instead of throwing', async () => {
+    mockAuth.signUp.mockRejectedValue(new TypeError('Failed to fetch'));
+    const res = await auth.signUp('a@b.com', 'password123');
+    expect(res.user).toBeNull();
+    expect(res.error).toBe("Can't reach the server. Check your connection and try again.");
+    expect(res.needsConfirmation).toBe(false);
   });
 });
 
@@ -104,5 +119,19 @@ describe('sign out', () => {
     auth.continueAsGuest();
     await auth.signOut();
     expect(auth.isGuest()).toBe(false);
+  });
+
+  test('turns a rejected (transport-level) call into a readable error instead of throwing', async () => {
+    mockAuth.signOut.mockRejectedValue(new TypeError('Failed to fetch'));
+    const res = await auth.signOut();
+    expect(res.error).toBe("Can't reach the server. Check your connection and try again.");
+  });
+});
+
+describe('getUser', () => {
+  test('returns null rather than throwing when the call is rejected (transport-level)', async () => {
+    mockAuth.getUser.mockRejectedValue(new TypeError('Failed to fetch'));
+    const res = await auth.getUser();
+    expect(res).toBeNull();
   });
 });

@@ -14,6 +14,14 @@ export const GUEST_KEY = 'chipaway.guest';
 
 const NO_BACKEND = 'Accounts are not set up in this build. Play as a guest instead.';
 
+// supabase-js resolves with { data, error } for an API-level failure (bad
+// password, expired token, ...) but REJECTS the promise for a transport-level
+// one -- offline, DNS failure, CORS, an aborted request. That rejection must
+// still come out the same { user, error } / { error } door as everything
+// else, so every call below is wrapped and the reject path is given its own
+// message: unlike a bad password, this is not the player's fault.
+const NETWORK_ERROR = "Can't reach the server. Check your connection and try again.";
+
 // Supabase's messages are aimed at developers. These are aimed at a player.
 const FRIENDLY = {
   'Invalid login credentials': 'That email and password do not match.',
@@ -45,8 +53,12 @@ export function endGuest() {
 export async function signIn(email, password) {
   if (!email || !password) return { user: null, error: 'Enter your email and password.' };
   if (!isConfigured) return { user: null, error: NO_BACKEND };
-  const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-  return { user: error ? null : (data && data.user) || null, error: friendly(error) };
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    return { user: error ? null : (data && data.user) || null, error: friendly(error) };
+  } catch (e) {
+    return { user: null, error: NETWORK_ERROR };
+  }
 }
 
 export async function signUp(email, password) {
@@ -57,10 +69,14 @@ export async function signUp(email, password) {
     return { user: null, error: 'Use a password of at least 8 characters.', needsConfirmation: false };
   }
   if (!isConfigured) return { user: null, error: NO_BACKEND, needsConfirmation: false };
-  const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
-  // A user with no session means Supabase is waiting on a confirmation email.
-  const needsConfirmation = Boolean(!error && data && data.user && !data.session);
-  return { user: error ? null : (data && data.user) || null, error: friendly(error), needsConfirmation };
+  try {
+    const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+    // A user with no session means Supabase is waiting on a confirmation email.
+    const needsConfirmation = Boolean(!error && data && data.user && !data.session);
+    return { user: error ? null : (data && data.user) || null, error: friendly(error), needsConfirmation };
+  } catch (e) {
+    return { user: null, error: NETWORK_ERROR, needsConfirmation: false };
+  }
 }
 
 export async function signOut() {
@@ -68,17 +84,25 @@ export async function signOut() {
   // holding a guest flag that quietly waves them past the gate.
   endGuest();
   if (!isConfigured) return { error: null };
-  const { error } = await supabase.auth.signOut();
-  return { error: friendly(error) };
+  try {
+    const { error } = await supabase.auth.signOut();
+    return { error: friendly(error) };
+  } catch (e) {
+    return { error: NETWORK_ERROR };
+  }
 }
 
 export async function getUser() {
   if (!isConfigured) return null;
-  // getUser(), not getSession(): getSession trusts whatever is in storage,
-  // while getUser revalidates the token with the server.
-  const { data, error } = await supabase.auth.getUser();
-  if (error) return null;
-  return (data && data.user) || null;
+  try {
+    // getUser(), not getSession(): getSession trusts whatever is in storage,
+    // while getUser revalidates the token with the server.
+    const { data, error } = await supabase.auth.getUser();
+    if (error) return null;
+    return (data && data.user) || null;
+  } catch (e) {
+    return null;
+  }
 }
 
 // Returns an unsubscribe function. Callers are React effects, which need a

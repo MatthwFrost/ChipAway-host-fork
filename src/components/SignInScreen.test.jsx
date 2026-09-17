@@ -36,6 +36,17 @@ describe('SignInScreen', () => {
     expect(onSignedIn).not.toHaveBeenCalled();
   });
 
+  test('shows a readable error rather than freezing the form when signIn rejects', async () => {
+    auth.signIn.mockRejectedValue(new TypeError('Failed to fetch'));
+    const onSignedIn = vi.fn();
+    render(<SignInScreen onSignedIn={onSignedIn} onGuest={() => {}} />);
+    fill('a@b.com', 'password123');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByText('Something went wrong. Try again.');
+    expect(onSignedIn).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Sign in' })).not.toBeDisabled();
+  });
+
   test('switches to create-account mode and calls signUp', async () => {
     auth.signUp.mockResolvedValue({ user: { id: 'u2' }, error: null, needsConfirmation: false });
     render(<SignInScreen onSignedIn={() => {}} onGuest={() => {}} />);

@@ -130,6 +130,15 @@ describe('push', () => {
     const res = await sync.push();
     expect(res.error).toBe('permission denied');
   });
+
+  test('reports a readable error rather than throwing when the upsert call itself rejects (transport-level)', async () => {
+    localStorage.setItem('chipaway.hands.v1', JSON.stringify([HAND]));
+    upsert.mockRejectedValue(new TypeError('Failed to fetch'));
+    const res = await sync.push();
+    expect(res.error).toBe("Can't reach the server. Check your connection and try again.");
+    expect(res.games).toBe(0);
+    expect(res.hands).toBe(0);
+  });
 });
 
 describe('pull', () => {
@@ -146,6 +155,14 @@ describe('pull', () => {
     select.mockResolvedValue({ data: null, error: { message: 'jwt expired' } });
     const res = await sync.pull();
     expect(res.error).toBe('jwt expired');
+  });
+
+  test('reports a readable error rather than throwing when the select call itself rejects (transport-level)', async () => {
+    select.mockRejectedValue(new TypeError('Failed to fetch'));
+    const res = await sync.pull();
+    expect(res.error).toBe("Can't reach the server. Check your connection and try again.");
+    expect(res.games).toBe(0);
+    expect(res.hands).toBe(0);
   });
 });
 
