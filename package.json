@@ -18,6 +18,7 @@
     "sim:sweep": "node src/harness/sweep.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
