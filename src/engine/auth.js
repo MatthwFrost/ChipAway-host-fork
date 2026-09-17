@@ -66,16 +66,29 @@ export async function signIn(email, password) {
   }
 }
 
-export async function signUp(email, password) {
+const MAX_DISPLAY_NAME = 40;
+
+export async function signUp(email, password, displayName) {
   if (!email || !password) return { user: null, error: 'Enter your email and password.', needsConfirmation: false };
   // Checked here rather than left to the server so the player is told before
   // a round trip, and in the same words every time.
   if (password.length < 8) {
     return { user: null, error: 'Use a password of at least 8 characters.', needsConfirmation: false };
   }
+  const name = (displayName || '').trim();
+  if (!name) {
+    return { user: null, error: 'Choose a display name.', needsConfirmation: false };
+  }
+  if (name.length > MAX_DISPLAY_NAME) {
+    return { user: null, error: `Keep your display name under ${MAX_DISPLAY_NAME} characters.`, needsConfirmation: false };
+  }
   if (!isConfigured) return { user: null, error: NO_BACKEND, needsConfirmation: false };
   try {
-    const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { data: { display_name: name } },
+    });
     // A user with no session means Supabase is waiting on a confirmation email.
     const needsConfirmation = Boolean(!error && data && data.user && !data.session);
     const user = error ? null : (data && data.user) || null;
@@ -112,6 +125,25 @@ export async function getUser() {
     const { data, error } = await supabase.auth.getUser();
     if (error) return null;
     return (data && data.user) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// The name shown in the rail instead of an email. Reads back through
+// getUser() (real signed-in check) rather than trusting a cached id, and
+// selects only display_name -- RLS on public.profiles already scopes the
+// row to (select auth.uid()) = id, so there is no user_id filter to add here,
+// same pattern pull() in sync.js uses for games/hands. Never throws: a rail
+// label is cosmetic, not something worth crashing the shell over.
+export async function getDisplayName() {
+  if (!isConfigured) return null;
+  try {
+    const user = await getUser();
+    if (!user) return null;
+    const { data, error } = await supabase.from('profiles').select('display_name').maybeSingle();
+    if (error) return null;
+    return (data && data.display_name) || null;
   } catch (e) {
     return null;
   }

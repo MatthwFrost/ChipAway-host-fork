@@ -9,9 +9,12 @@ const mockAuth = {
   getUser: vi.fn(),
   onAuthStateChange: vi.fn(),
 };
+const maybeSingle = vi.fn();
+const select = vi.fn(() => ({ maybeSingle }));
+const from = vi.fn(() => ({ select }));
 
 vi.mock('./supabaseClient.js', () => ({
-  supabase: { auth: mockAuth },
+  supabase: { auth: mockAuth, from: (...a) => from(...a) },
   isConfigured: true,
   SUPABASE_URL: 'https://example.supabase.co',
 }));
@@ -71,26 +74,26 @@ describe('sign up', () => {
   test('flags when a confirmation email is required', async () => {
     // Supabase returns a user with no session when confirmations are on.
     mockAuth.signUp.mockResolvedValue({ data: { user: { id: 'u2' }, session: null }, error: null });
-    const res = await auth.signUp('a@b.com', 'password123');
+    const res = await auth.signUp('a@b.com', 'password123', 'Ada');
     expect(res.needsConfirmation).toBe(true);
     expect(res.error).toBeNull();
   });
 
   test('does not flag confirmation when a session comes back', async () => {
     mockAuth.signUp.mockResolvedValue({ data: { user: { id: 'u2' }, session: { access_token: 't' } }, error: null });
-    const res = await auth.signUp('a@b.com', 'password123');
+    const res = await auth.signUp('a@b.com', 'password123', 'Ada');
     expect(res.needsConfirmation).toBe(false);
   });
 
   test('rejects a short password before calling the network', async () => {
-    const res = await auth.signUp('a@b.com', 'short');
+    const res = await auth.signUp('a@b.com', 'short', 'Ada');
     expect(res.error).toBe('Use a password of at least 8 characters.');
     expect(mockAuth.signUp).not.toHaveBeenCalled();
   });
 
   test('turns a rejected (transport-level) call into a readable error instead of throwing', async () => {
     mockAuth.signUp.mockRejectedValue(new TypeError('Failed to fetch'));
-    const res = await auth.signUp('a@b.com', 'password123');
+    const res = await auth.signUp('a@b.com', 'password123', 'Ada');
     expect(res.user).toBeNull();
     expect(res.error).toBe("Can't reach the server. Check your connection and try again.");
     expect(res.needsConfirmation).toBe(false);
@@ -99,16 +102,76 @@ describe('sign up', () => {
   test('clears a stale guest flag when a session comes back immediately', async () => {
     mockAuth.signUp.mockResolvedValue({ data: { user: { id: 'u2' }, session: { access_token: 't' } }, error: null });
     auth.continueAsGuest();
-    await auth.signUp('a@b.com', 'password123');
+    await auth.signUp('a@b.com', 'password123', 'Ada');
     expect(auth.isGuest()).toBe(false);
   });
 
   test('leaves the guest flag alone when confirmation is still pending -- there is no session yet', async () => {
     mockAuth.signUp.mockResolvedValue({ data: { user: { id: 'u2' }, session: null }, error: null });
     auth.continueAsGuest();
-    const res = await auth.signUp('a@b.com', 'password123');
+    const res = await auth.signUp('a@b.com', 'password123', 'Ada');
     expect(res.needsConfirmation).toBe(true);
     expect(auth.isGuest()).toBe(true);
+  });
+
+  test('passes the trimmed display name through as signup metadata', async () => {
+    mockAuth.signUp.mockResolvedValue({ data: { user: { id: 'u2' }, session: { access_token: 't' } }, error: null });
+    await auth.signUp('a@b.com', 'password123', '  Ada Lovelace  ');
+    expect(mockAuth.signUp).toHaveBeenCalledWith({
+      email: 'a@b.com',
+      password: 'password123',
+      options: { data: { display_name: 'Ada Lovelace' } },
+    });
+  });
+
+  test('rejects a missing name before calling the network', async () => {
+    const res = await auth.signUp('a@b.com', 'password123', undefined);
+    expect(res.error).toBe('Choose a display name.');
+    expect(mockAuth.signUp).not.toHaveBeenCalled();
+  });
+
+  test('rejects a blank (whitespace-only) name before calling the network', async () => {
+    const res = await auth.signUp('a@b.com', 'password123', '   ');
+    expect(res.error).toBe('Choose a display name.');
+    expect(mockAuth.signUp).not.toHaveBeenCalled();
+  });
+
+  test('rejects a name over the max length before calling the network', async () => {
+    const res = await auth.signUp('a@b.com', 'password123', 'x'.repeat(41));
+    expect(res.error).toBe('Keep your display name under 40 characters.');
+    expect(mockAuth.signUp).not.toHaveBeenCalled();
+  });
+});
+
+describe('getDisplayName', () => {
+  test('returns the signed-in player name', async () => {
+    mockAuth.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
+    maybeSingle.mockResolvedValue({ data: { display_name: 'Ada Lovelace' }, error: null });
+    const res = await auth.getDisplayName();
+    expect(res).toBe('Ada Lovelace');
+    expect(from).toHaveBeenCalledWith('profiles');
+    expect(select).toHaveBeenCalledWith('display_name');
+  });
+
+  test('returns null when nobody is signed in', async () => {
+    mockAuth.getUser.mockResolvedValue({ data: { user: null }, error: null });
+    const res = await auth.getDisplayName();
+    expect(res).toBeNull();
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  test('returns null (not a throw) on an API-level error', async () => {
+    mockAuth.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
+    maybeSingle.mockResolvedValue({ data: null, error: { message: 'nope' } });
+    const res = await auth.getDisplayName();
+    expect(res).toBeNull();
+  });
+
+  test('returns null (not a throw) on a rejected (transport-level) call', async () => {
+    mockAuth.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
+    maybeSingle.mockRejectedValue(new TypeError('Failed to fetch'));
+    const res = await auth.getDisplayName();
+    expect(res).toBeNull();
   });
 });
 

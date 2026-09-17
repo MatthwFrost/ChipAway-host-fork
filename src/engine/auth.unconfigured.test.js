@@ -32,7 +32,7 @@ describe('when Supabase is not configured', () => {
   });
 
   test('signUp returns the no-backend message without touching the client', async () => {
-    const res = await auth.signUp('a@b.com', 'password123');
+    const res = await auth.signUp('a@b.com', 'password123', 'Ada');
     expect(res).toEqual({
       user: null,
       error: 'Accounts are not set up in this build. Play as a guest instead.',
@@ -49,6 +49,11 @@ describe('when Supabase is not configured', () => {
 
   test('getUser returns null without touching the client', async () => {
     const res = await auth.getUser();
+    expect(res).toBeNull();
+  });
+
+  test('getDisplayName returns null without touching the client', async () => {
+    const res = await auth.getDisplayName();
     expect(res).toBeNull();
   });
 
