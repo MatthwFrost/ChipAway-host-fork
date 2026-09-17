@@ -134,6 +134,79 @@ describe('two admins at once', () => {
   });
 });
 
+describe('ticking a box', () => {
+  const boxes = () => Array.from(document.querySelectorAll('.dev-notes-doc input[type="checkbox"]'));
+
+  test('the boxes are live, not the decorative disabled ones marked emits', async () => {
+    await open();
+    expect(boxes()).toHaveLength(2);
+    expect(boxes().every((b) => b.disabled)).toBe(false);
+  });
+
+  test('ticking writes the tick back into the markdown and saves it', async () => {
+    await open();
+    click(boxes()[0]);
+    await waitFor(() => expect(saveNotes).toHaveBeenCalledTimes(1));
+    const [body, token] = saveNotes.mock.calls[0];
+    expect(body).toContain('- [x] Fix the rail');
+    // Untouched, and sent with the timestamp this copy was loaded with.
+    expect(body).toContain('- [x] Ship accounts');
+    expect(token).toBe(DOC.updatedAt);
+  });
+
+  test('unticking works the same way round', async () => {
+    await open();
+    click(boxes()[1]);
+    await waitFor(() => expect(saveNotes).toHaveBeenCalledTimes(1));
+    expect(saveNotes.mock.calls[0][0]).toContain('- [ ] Ship accounts');
+  });
+
+  test('the box moves immediately rather than waiting on the round trip', async () => {
+    let release;
+    saveNotes.mockImplementation(() => new Promise((res) => { release = () => res({ ok: true, conflict: false, updatedAt: 'T2', updatedEmail: 'x', error: null }); }));
+    await open();
+    click(boxes()[0]);
+    expect(boxes()[0].checked).toBe(true);
+    await act(async () => { release(); });
+  });
+
+  test('a failed save puts the doc back and says why', async () => {
+    saveNotes.mockResolvedValue({ ok: false, conflict: true, updatedAt: null, updatedEmail: null, error: 'Someone else saved changes since you opened this.' });
+    await open();
+    click(boxes()[0]);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/someone else saved/i));
+    // Reverted: the screen never shows a state the server refused.
+    expect(boxes()[0].checked).toBe(false);
+    // And not the editing conflict, which offers to keep a draft there isn't one of.
+    expect(screen.queryByRole('button', { name: /keep mine/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+  });
+
+  test('a second tick is refused until the first save lands', async () => {
+    let release;
+    saveNotes.mockImplementation(() => new Promise((res) => { release = () => res({ ok: true, conflict: false, updatedAt: 'T2', updatedEmail: 'x', error: null }); }));
+    await open();
+    click(boxes()[0]);
+    // Otherwise it would be sent with the token the first save has already
+    // spent, and come back as a conflict with nobody else involved.
+    expect(boxes()[1].disabled).toBe(true);
+    click(boxes()[1]);
+    expect(saveNotes).toHaveBeenCalledTimes(1);
+    await act(async () => { release(); });
+  });
+
+  test('the next tick uses the timestamp the last save returned', async () => {
+    await open();
+    click(boxes()[0]);
+    await waitFor(() => expect(saveNotes).toHaveBeenCalledTimes(1));
+    // The boxes come back live once the save lands -- see the test above.
+    await waitFor(() => expect(boxes()[1].disabled).toBe(false));
+    click(boxes()[1]);
+    await waitFor(() => expect(saveNotes).toHaveBeenCalledTimes(2));
+    expect(saveNotes.mock.calls[1][1]).toBe('T2');
+  });
+});
+
 describe('sanitising', () => {
   test('strips a script tag out of the rendered doc', async () => {
     loadNotes.mockResolvedValue({ ...DOC, body: 'Hello <script>window.__pwned = 1;</script> world' });

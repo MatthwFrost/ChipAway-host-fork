@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { loadNotes, saveNotes } from '../engine/devNotes';
+import { setTaskAt } from '../engine/markdownTasks';
 
 /* ============================================================
    DEV NOTES — the shared change list, rendered.
@@ -133,6 +134,70 @@ export function DevNotesScreen({ active = false }) {
     await commit(fresh.updatedAt);
   }, [commit, fetchDoc]);
 
+  // Ticking a box in the rendered doc. The markdown is the document of
+  // record, so this rewrites the source line and saves it -- there is no
+  // separate "checked" state anywhere, and reloading on another machine shows
+  // the same ticks.
+  //
+  // Applied to the screen first and saved after, because a checkbox that does
+  // not move until a round trip finishes feels broken. If the save fails the
+  // whole doc goes back to what it was, so what you see is never something the
+  // server did not accept.
+  const toggleTask = useCallback(async (index, checked) => {
+    const next = setTaskAt(doc.body, index, checked);
+    // No task at that index means the DOM and the source have drifted. Writing
+    // a guess back would corrupt the doc; leaving it alone costs one tick.
+    if (next === null) return;
+    const previous = doc;
+    setDoc((d) => ({ ...d, body: next }));
+    setBusy(true);
+    const res = await saveNotes(next, previous.updatedAt);
+    setBusy(false);
+    if (!res.ok) {
+      setDoc(previous);
+      // Not the editing conflict: there is no draft to keep or discard here,
+      // so this offers a re-read rather than Keep mine / Load theirs.
+      setConflict(false);
+      setError(res.error);
+      return;
+    }
+    setDoc({ body: next, updatedAt: res.updatedAt, updatedEmail: res.updatedEmail });
+    setError(null);
+  }, [doc]);
+
+  // marked emits the checkbox disabled, which is right for a doc you only
+  // read and wrong for one you keep. Enabling them in an effect rather than
+  // rewriting the sanitised HTML string: the markup is generated, so the
+  // attribute is easier to take off the node than out of the text.
+  //
+  // One delegated listener rather than a handler per box -- the inputs come
+  // from innerHTML and are replaced wholesale every time the body changes.
+  const docRef = useRef(null);
+  useEffect(() => {
+    const el = docRef.current;
+    if (!el) return undefined;
+    const boxes = el.querySelectorAll('input[type="checkbox"]');
+    boxes.forEach((box, i) => {
+      // Re-disabled while a save is in flight: a second tick would be sent
+      // with the token the first one has already spent, and would come back
+      // as a conflict with nobody else involved.
+      box.disabled = busy;
+      // Position in the rendered doc, which is what setTaskAt indexes by.
+      box.dataset.task = String(i);
+      if (!box.getAttribute('aria-label')) {
+        const item = box.closest('li');
+        box.setAttribute('aria-label', (item && item.textContent.trim()) || `Task ${i + 1}`);
+      }
+    });
+    const onChange = (e) => {
+      const box = e.target;
+      if (!box || box.type !== 'checkbox' || box.dataset.task === undefined) return;
+      toggleTask(Number(box.dataset.task), box.checked);
+    };
+    el.addEventListener('change', onChange);
+    return () => el.removeEventListener('change', onChange);
+  }, [html, toggleTask, busy]);
+
   const loadTheirs = useCallback(async () => {
     const fresh = await fetchDoc();
     if (!fresh) return;
@@ -173,7 +238,7 @@ export function DevNotesScreen({ active = false }) {
               <button type="button" onClick={loadTheirs} disabled={busy}>Load theirs</button>
             </div>
           )}
-          {status === 'error' && !conflict && (
+          {!conflict && !editing && (
             <div className="dev-notes-alert-actions">
               <button type="button" onClick={fetchDoc} disabled={busy}>Try again</button>
             </div>
@@ -184,7 +249,7 @@ export function DevNotesScreen({ active = false }) {
       {status === 'ready' && !editing && (
         // Sanitised at the top of this file. The doc is markdown the two of us
         // wrote, so it renders as a document rather than as app furniture.
-        <article className="dev-notes-doc" dangerouslySetInnerHTML={{ __html: html }} />
+        <article ref={docRef} className="dev-notes-doc" dangerouslySetInnerHTML={{ __html: html }} />
       )}
 
       {editing && (

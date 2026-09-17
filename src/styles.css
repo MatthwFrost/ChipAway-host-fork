@@ -3506,9 +3506,22 @@ svg.spark {
   margin-left: -1.3em
 }
 
+/* Live, not decorative: ticking one rewrites the markdown and saves it, so it
+   has to read as something you can press. Goes flat and grey while a save is
+   in flight -- the component disables them so a second tick cannot be sent
+   against a token the first has already spent. */
 .dev-notes-doc input[type="checkbox"] {
   margin-right: .5em;
-  accent-color: var(--felt)
+  accent-color: var(--felt);
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  vertical-align: -2px
+}
+
+.dev-notes-doc input[type="checkbox"]:disabled {
+  cursor: progress;
+  opacity: .5
 }
 
 /* Ticked items are done, and done work should recede rather than compete with
