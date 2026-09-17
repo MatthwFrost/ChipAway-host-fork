@@ -2810,12 +2810,14 @@ svg.spark {
    Both screens are mounted at once (see App.jsx: the engine's nodes cannot be
    unmounted and rebuilt), so the visible one is chosen here rather than by
    conditional rendering. */
-.shell[data-screen="home"] .board-grid {
+.shell[data-screen="home"] .board-grid,
+.shell[data-screen="notes"] .board-grid {
   display: none
 }
 
 .shell[data-screen="table"] .home-screen,
-.shell[data-screen="history"] .home-screen {
+.shell[data-screen="history"] .home-screen,
+.shell[data-screen="notes"] .home-screen {
   display: none
 }
 
@@ -3350,4 +3352,222 @@ svg.spark {
   margin-top: 4px;
   border-top: 1px solid var(--line);
   padding-top: 12px
+}
+
+/* ============================================================
+   DEV NOTES — the admins' shared change list
+
+   Mounted alongside the other screens and shown by the same data-screen
+   switch (see the HOME section above). Hidden by default rather than shown
+   by default: this page is drawn for two accounts out of all of them, and a
+   rule that has to be turned off is one deploy away from being visible to
+   everybody.
+
+   The body is a *document*, not app furniture, so it gets document
+   typography -- a measure that stops around 70 characters, real space between
+   paragraphs, and headings that step down. Everything under .dev-notes-doc is
+   element-typed because the markup comes from marked, which emits plain tags
+   with no classes to hook. */
+.dev-notes {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 40px 24px 64px
+}
+
+.shell[data-screen="notes"] .dev-notes {
+  display: block
+}
+
+.dev-notes-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--line)
+}
+
+.dev-notes-title {
+  margin: 0;
+  font-size: 22px;
+  color: var(--cream)
+}
+
+.dev-notes-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--slate)
+}
+
+.dev-notes-actions {
+  display: flex;
+  gap: 8px;
+  flex: none
+}
+
+.dev-notes-cancel {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--cream-dim)
+}
+
+.dev-notes-empty {
+  color: var(--cream-dim)
+}
+
+/* A warning, not a failure: on a conflict your text is still in the box below
+   this, so the panel has to read as something you act on rather than
+   something that has already gone wrong. */
+.dev-notes-alert {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--blood);
+  border-radius: 8px;
+  background: rgba(214, 79, 79, .12);
+  color: var(--cream)
+}
+
+.dev-notes-alert p {
+  margin: 0
+}
+
+.dev-notes-alert-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px
+}
+
+.dev-notes-edit {
+  width: 100%;
+  min-height: 60vh;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1D1B19;
+  color: var(--cream);
+  /* Monospace, because you are editing markdown: the - [ ] and the indents
+     only line up in a fixed pitch. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical
+}
+
+.dev-notes-doc {
+  color: var(--cream-dim);
+  font-size: 15px;
+  line-height: 1.65
+}
+
+.dev-notes-doc h1,
+.dev-notes-doc h2,
+.dev-notes-doc h3 {
+  margin: 1.6em 0 .6em;
+  color: var(--cream);
+  line-height: 1.25
+}
+
+.dev-notes-doc h1:first-child,
+.dev-notes-doc h2:first-child {
+  margin-top: 0
+}
+
+.dev-notes-doc h1 { font-size: 24px }
+.dev-notes-doc h2 { font-size: 19px }
+.dev-notes-doc h3 { font-size: 16px }
+
+.dev-notes-doc p,
+.dev-notes-doc ul,
+.dev-notes-doc ol,
+.dev-notes-doc blockquote {
+  margin: 0 0 1em
+}
+
+.dev-notes-doc ul,
+.dev-notes-doc ol {
+  padding-left: 1.3em
+}
+
+.dev-notes-doc li {
+  margin-bottom: .35em
+}
+
+/* Task lists. marked emits the checkbox as a disabled input inside the li and
+   drops the marker, so the bullet has to come off too or every item reads as
+   a dot followed by a box. */
+.dev-notes-doc li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.3em
+}
+
+.dev-notes-doc input[type="checkbox"] {
+  margin-right: .5em;
+  accent-color: var(--felt)
+}
+
+/* Ticked items are done, and done work should recede rather than compete with
+   the list of what is left. */
+.dev-notes-doc li:has(> input[type="checkbox"]:checked) {
+  color: var(--slate);
+  text-decoration: line-through
+}
+
+.dev-notes-doc a {
+  color: var(--felt)
+}
+
+.dev-notes-doc code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--rail-hi);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .88em
+}
+
+.dev-notes-doc pre {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1D1B19;
+  overflow-x: auto
+}
+
+.dev-notes-doc pre code {
+  padding: 0;
+  background: none
+}
+
+.dev-notes-doc blockquote {
+  padding-left: 14px;
+  border-left: 3px solid var(--line);
+  color: var(--slate)
+}
+
+.dev-notes-doc hr {
+  margin: 1.8em 0;
+  border: 0;
+  border-top: 1px solid var(--line)
+}
+
+.dev-notes-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em
+}
+
+.dev-notes-doc th,
+.dev-notes-doc td {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  text-align: left
+}
+
+.dev-notes-doc th {
+  color: var(--cream)
 }

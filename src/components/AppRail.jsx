@@ -9,7 +9,7 @@
 
 import { avatarInitial, profileLabel } from './profileLabel';
 
-export function AppRail({ screen = 'table', onNavigate = () => {}, user = null, displayName = null, onSignOut = () => {}, onLeaveGuest = () => {} }) {
+export function AppRail({ screen = 'table', onNavigate = () => {}, user = null, displayName = null, onSignOut = () => {}, onLeaveGuest = () => {}, admin = false }) {
   // Shared with the table's player bar so the two identities cannot drift --
   // see profileLabel.js.
   const label = profileLabel(user, displayName);
@@ -84,6 +84,30 @@ export function AppRail({ screen = 'table', onNavigate = () => {}, user = null, 
           </span>
           <span className="rail-label">History</span>
         </button>
+
+        {/* Admins only, and only cosmetically so: this decides whether the row
+            is drawn, nothing more. What actually keeps the notes private is
+            the RLS policy in 0003_dev_notes.sql -- a non-admin who calls the
+            endpoint directly gets no rows back. See devNotes.js. */}
+        {admin && (
+          <button
+            type="button"
+            className={`rail-btn rail-notes${screen === 'notes' ? ' is-active' : ''}`}
+            aria-current={screen === 'notes' ? 'page' : undefined}
+            onClick={() => onNavigate('notes')}
+          >
+            {/* The same card again, inked with a tick — a list of things to
+                change, and what you do to them. */}
+            <span className="rail-mark" aria-hidden="true">
+              <span className="rail-card is-solo">
+                <svg className="rail-ink" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9.4 19.6 1.8 12l3-3 4.6 4.6L19.2 4.2l3 3Z" />
+                </svg>
+              </span>
+            </span>
+            <span className="rail-label">Dev notes</span>
+          </button>
+        )}
       </div>
 
       {/* margin-top:auto pins this to the floor of the rail, whatever grows

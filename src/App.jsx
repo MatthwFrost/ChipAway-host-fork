@@ -10,6 +10,8 @@ import { SettingsModal } from './components/SettingsModal';
 import { HomeScreen } from './components/HomeScreen';
 import { HistoryPanel } from './components/HistoryPanel';
 import { endGuest, getDisplayName, getUser, isGuest, onAuthChange, signOut } from './engine/auth';
+import { isAdmin } from './engine/devNotes';
+import { DevNotesScreen } from './components/DevNotesScreen';
 import { push, syncNow } from './engine/sync';
 import { SignInScreen } from './components/SignInScreen';
 
@@ -345,9 +347,21 @@ export function App() {
     );
   }
 
+  // Two admin accounts get a fourth nav row and the notes screen behind it.
+  // Cosmetic by design -- the email list ships in the bundle like everything
+  // else on a static site. The data is kept private by RLS, not by this. See
+  // devNotes.js and supabase/migrations/0003_dev_notes.sql.
+  const admin = isAdmin(user);
+  // A belt-and-braces fallback rather than a live concern: the only route to
+  // 'notes' is a row that non-admins never see, and every path that swaps
+  // accounts reloads. But leaving a screen selected that the user can no
+  // longer reach would strand them on a blank shell with no nav row to click
+  // back out of, so it resolves to Home instead.
+  const shown = screen === 'notes' && !admin ? 'home' : screen;
+
   return (
-    <div className="shell" data-screen={screen}>
-      <AppRail screen={screen} onNavigate={navigate} user={user} displayName={displayName} onSignOut={doSignOut} onLeaveGuest={leaveGuest} />
+    <div className="shell" data-screen={shown}>
+      <AppRail screen={shown} onNavigate={navigate} user={user} displayName={displayName} onSignOut={doSignOut} onLeaveGuest={leaveGuest} admin={admin} />
 
       <HomeScreen
         games={games}
@@ -368,6 +382,11 @@ export function App() {
             hand uses. CSS decides which of the two panels is beside it. */}
         <HistoryPanel active={screen === 'history'} getApi={getEngine} />
       </main>
+
+      {/* Mounted for the session like the screens above it, and shown by the
+          same data-screen switch -- but it only fetches once it is actually
+          opened, so a session that never visits it costs no request. */}
+      {admin && <DevNotesScreen active={shown === 'notes'} />}
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>

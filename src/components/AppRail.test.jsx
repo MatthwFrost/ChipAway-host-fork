@@ -31,3 +31,28 @@ describe('AppRail profile row', () => {
     expect(onSignOut).toHaveBeenCalled();
   });
 });
+
+describe('AppRail dev notes row', () => {
+  test('is absent for an ordinary player', () => {
+    render(<AppRail user={{ email: 'player@example.com' }} onSignOut={() => {}} />);
+    expect(screen.queryByText('Dev notes')).not.toBeInTheDocument();
+  });
+
+  test('is absent for a guest', () => {
+    render(<AppRail user={null} onLeaveGuest={() => {}} />);
+    expect(screen.queryByText('Dev notes')).not.toBeInTheDocument();
+  });
+
+  test('is drawn for an admin and navigates to the notes screen', () => {
+    const onNavigate = vi.fn();
+    render(<AppRail user={{ email: 'a@b.com' }} admin onNavigate={onNavigate} onSignOut={() => {}} />);
+    const row = screen.getByText('Dev notes').closest('button');
+    row.click();
+    expect(onNavigate).toHaveBeenCalledWith('notes');
+  });
+
+  test('marks itself as the current page on the notes screen', () => {
+    render(<AppRail user={{ email: 'a@b.com' }} admin screen="notes" onSignOut={() => {}} />);
+    expect(screen.getByText('Dev notes').closest('button')).toHaveAttribute('aria-current', 'page');
+  });
+});
