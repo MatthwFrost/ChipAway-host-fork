@@ -3233,3 +3233,119 @@ svg.spark {
     padding: 28px 16px 48px
   }
 }
+
+/* ============================================================
+   SIGN IN — the gate shown before any screen when nobody is signed in and
+   guest mode has not been chosen. Its own full-bleed layout rather than a
+   modal: there is nothing behind it to look at yet. */
+.signin-screen {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--dark-ink)
+}
+
+.signin-card {
+  width: 100%;
+  max-width: 340px;
+  padding: 26px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  box-shadow: var(--shadow-standard)
+}
+
+.signin-title {
+  margin: 0 0 4px;
+  font-size: 26px;
+  color: var(--cream)
+}
+
+.signin-sub {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--cream-dim)
+}
+
+.signin-form {
+  display: flex;
+  flex-direction: column
+}
+
+.signin-label {
+  margin-bottom: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--cream-dim)
+}
+
+.signin-input {
+  margin-bottom: 13px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--ink-2);
+  color: var(--cream);
+  font: inherit
+}
+
+.signin-input:focus {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px
+}
+
+.signin-submit {
+  padding: 10px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--brass);
+  color: #14200a;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer
+}
+
+.signin-submit:disabled {
+  opacity: .6;
+  cursor: default
+}
+
+.signin-error {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--blood)
+}
+
+.signin-notice {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--brass)
+}
+
+.signin-switch,
+.signin-skip {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 7px;
+  border: 0;
+  background: none;
+  color: var(--cream-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer
+}
+
+.signin-switch:hover,
+.signin-skip:hover {
+  color: var(--cream)
+}
+
+.signin-skip {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px
+}
