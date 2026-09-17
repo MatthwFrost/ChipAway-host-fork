@@ -6,14 +6,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 // supabaseClient.js exports supabase === null and isConfigured === false.
 // Every auth.js function must still return its documented no-backend value
 // without throwing and without touching the (null) supabase client.
-const mockAuth = {
-  signUp: vi.fn(),
-  signInWithPassword: vi.fn(),
-  signOut: vi.fn(),
-  getUser: vi.fn(),
-  onAuthStateChange: vi.fn(),
-};
-
+//
+// "without touching the client" needs no spy to assert: supabase IS null here,
+// so any auth.js path that reached for supabase.auth.* would raise a TypeError
+// and fail the test outright. A mock client would be a weaker check, not a
+// stronger one -- it would let such a path succeed silently.
 vi.mock('./supabaseClient.js', () => ({
   supabase: null,
   isConfigured: false,
@@ -32,7 +29,6 @@ describe('when Supabase is not configured', () => {
   test('signIn returns the no-backend message without touching the client', async () => {
     const res = await auth.signIn('a@b.com', 'pw');
     expect(res).toEqual({ user: null, error: 'Accounts are not set up in this build. Play as a guest instead.' });
-    expect(mockAuth.signInWithPassword).not.toHaveBeenCalled();
   });
 
   test('signUp returns the no-backend message without touching the client', async () => {
@@ -42,7 +38,6 @@ describe('when Supabase is not configured', () => {
       error: 'Accounts are not set up in this build. Play as a guest instead.',
       needsConfirmation: false,
     });
-    expect(mockAuth.signUp).not.toHaveBeenCalled();
   });
 
   test('signOut still clears the guest flag and returns a null error', async () => {
@@ -50,19 +45,16 @@ describe('when Supabase is not configured', () => {
     const res = await auth.signOut();
     expect(res).toEqual({ error: null });
     expect(auth.isGuest()).toBe(false);
-    expect(mockAuth.signOut).not.toHaveBeenCalled();
   });
 
   test('getUser returns null without touching the client', async () => {
     const res = await auth.getUser();
     expect(res).toBeNull();
-    expect(mockAuth.getUser).not.toHaveBeenCalled();
   });
 
   test('onAuthChange returns a no-op unsubscribe safe to call from a React effect cleanup', () => {
     const off = auth.onAuthChange(() => {});
     expect(typeof off).toBe('function');
     expect(() => off()).not.toThrow();
-    expect(mockAuth.onAuthStateChange).not.toHaveBeenCalled();
   });
 });
