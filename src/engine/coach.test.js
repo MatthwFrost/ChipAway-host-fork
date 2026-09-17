@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import {
   buildCoachAdvice,
+  buildCoachNudge,
   buildHandReview,
+  coachQuip,
+  coachReaction,
   breakEvenFold,
   ci95Points,
   describeVillain,
@@ -603,5 +606,154 @@ describe('post-hand review', () => {
 
   test('no decisions means no review', () => {
     expect(buildHandReview([], { net: 0 })).toBeNull();
+  });
+});
+
+/* ---- the nudge: what the coach says live, in the bubble ---- */
+
+// The bubble prompts, it never answers. The answer is paid out after the hand,
+// in the review, where it can no longer be copied into a decision.
+describe('coach nudge', () => {
+  const nudge = (over) => strip(buildCoachNudge(spot(over)));
+
+  const CHECKED_TO_YOU = {
+    toCall: 0,
+    options: [
+      { label: 'check', ev: 0, amount: 0 },
+      { label: 'bet 120 (¾ pot)', ev: -8, amount: 120, fold: 0.12 },
+    ],
+    recommended: { label: 'check', ev: 0, amount: 0 },
+    position: { name: 'BTN', actsLast: true, preflop: false, credit: 0 },
+  };
+
+  const PREFLOP = {
+    ...CHECKED_TO_YOU,
+    streetName: 'Preflop',
+    position: { name: 'CO', actsLast: true, preflop: true, credit: 0 },
+  };
+
+  test('facing a bet, it prices the spot and hands the question back', () => {
+    const t = nudge();
+    expect(t).toContain('25%');
+    expect(t).toContain('50');
+    expect(t.trim().endsWith('?')).toBe(true);
+  });
+
+  test('preflop it points at the seat you are in, not the hand to play', () => {
+    const t = nudge(PREFLOP);
+    expect(t).toContain('CO');
+    expect(t.trim().endsWith('?')).toBe(true);
+  });
+
+  test('checked to you postflop, it asks whose range the board suits', () => {
+    const t = nudge(CHECKED_TO_YOU);
+    expect(t).toContain('board');
+    expect(t.trim().endsWith('?')).toBe(true);
+  });
+
+  test('with nothing left to decide it quips rather than asking a hollow question', () => {
+    const t = nudge({ options: [], recommended: null, toCall: 0 });
+    expect(t.length).toBeGreaterThan(8);
+    expect(t).not.toContain('?');
+    expect(t.length, 'a quip is small — it fills a silence, it does not teach').toBeLessThan(80);
+  });
+
+  test('the quip it fills that silence with rotates, so it does not become wallpaper', () => {
+    const at = (n) => strip(buildCoachNudge(spot({ options: [], recommended: null, toCall: 0 }), n));
+    expect(at(0)).not.toBe(at(1));
+    expect(at(0), 'and it is stable for a given hand, so it cannot flicker').toBe(at(0));
+  });
+
+  // The whole point of the change. If the nudge ever leaks the action, the
+  // bubble is back to being an answer key and the review has nothing to add.
+  test('it never names the action the coach would recommend', () => {
+    [{}, CHECKED_TO_YOU, PREFLOP, { recommended: { label: 'call 50', ev: -12, amount: 50 } }]
+      .forEach((over) => {
+        const s = spot(over);
+        const text = nudge(over).toLowerCase();
+        const verb = (s.recommended ? s.recommended.label : 'fold').split(' ')[0];
+        expect(text).not.toContain(verb);
+      });
+  });
+
+  test('it never leaks the verdict the review will give', () => {
+    const s = spot();
+    expect(nudge()).not.toContain(strip(buildCoachAdvice(s).verdict));
+  });
+});
+
+// Between hands the bubble still belongs to someone. An empty one reads as the
+// coach having got up and left.
+describe('coach quips', () => {
+  test('there is always something in the bubble while you wait for a deal', () => {
+    const q = strip(coachQuip('idle', 0));
+    expect(q.length).toBeGreaterThan(8);
+    expect(q.length, 'small talk, not a lesson').toBeLessThan(80);
+  });
+
+  test('they rotate hand to hand and wrap round rather than running out', () => {
+    const seen = new Set();
+    for (let n = 0; n < 40; n++) seen.add(coachQuip('idle', n));
+    expect(seen.size).toBeGreaterThan(3);
+    expect(coachQuip('idle', 0)).toBe(coachQuip('idle', 0));
+  });
+
+  test('waiting for a deal and being all-in are different silences', () => {
+    expect(coachQuip('idle', 0)).not.toBe(coachQuip('locked', 0));
+  });
+
+  test('a negative or nonsense hand count still returns a quip', () => {
+    expect(strip(coachQuip('idle', -3)).length).toBeGreaterThan(8);
+    expect(strip(coachQuip('idle', NaN)).length).toBeGreaterThan(8);
+  });
+
+  // The nudge invariant applies here too: a quip that tells you to fold is a
+  // quip that has quietly become an answer.
+  test('a quip never names an action', () => {
+    for (let n = 0; n < 40; n++) {
+      ['idle', 'locked'].forEach((kind) => {
+        expect(coachQuip(kind, n).toLowerCase()).not.toMatch(/\bfold\b|\bcall\b|\braise\b|\bcheck\b/);
+      });
+    }
+  });
+});
+
+// Playing a move and being handed small talk reads as not being listened to.
+describe('coach reactions', () => {
+  const KINDS = ['fold', 'check', 'call', 'bet', 'raise'];
+
+  test('every move hero can make gets a line back', () => {
+    KINDS.forEach((kind) => {
+      const r = strip(coachReaction(kind, 0));
+      expect(r.length, kind + ' had no reaction').toBeGreaterThan(8);
+      expect(r.length, 'still small talk, not a lesson').toBeLessThan(90);
+    });
+  });
+
+  test('the reaction is about the move that was actually played', () => {
+    expect(coachReaction('fold', 0)).not.toBe(coachReaction('raise', 0));
+    expect(coachReaction('check', 0)).not.toBe(coachReaction('call', 0));
+  });
+
+  test('an unrecognised move still gets something rather than nothing', () => {
+    expect(strip(coachReaction('sandbag', 0)).length).toBeGreaterThan(8);
+    expect(strip(coachReaction(null, 0)).length).toBeGreaterThan(8);
+  });
+
+  test('they rotate, so the same move twice does not read as a stuck record', () => {
+    expect(coachReaction('call', 0)).not.toBe(coachReaction('call', 1));
+  });
+
+  // Reactions may name the move — it has already been played, so there is
+  // nothing left to give away. What they must NOT do is grade it. Whether the
+  // move was right is the review's job, and saying it here both pre-empts the
+  // review and passes judgement before the runout is even known.
+  test('a reaction never grades the move', () => {
+    for (let n = 0; n < 12; n++) {
+      KINDS.forEach((kind) => {
+        expect(coachReaction(kind, n).toLowerCase())
+          .not.toMatch(/\b(good|great|nice|bad|wrong|right|mistake|should|better|worse|correct)\b/);
+      });
+    }
   });
 });

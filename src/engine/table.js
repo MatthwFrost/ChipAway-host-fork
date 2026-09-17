@@ -97,6 +97,11 @@ export function createTable(opts) {
   const seats = o.seats || ['nit', 'tag', 'lag', 'station', 'maniac'];
   const heroPolicy = o.heroPolicy || null;   // null => hero is dealt out of decisions and folds
   const onDecision = o.onDecision || null;   // observer, called for every action taken
+  // A createHandRecorder(), or null. The headless loop records through exactly
+  // the same module the app does, which is the point: what the tests verify is
+  // then the same recorder that runs in the browser, not a stand-in for it.
+  const recorder = o.recorder || null;
+  let lastRecorded = null;
 
   const players = [makePlayer(0, null, true)];
   seats.forEach(function (key, i) { players.push(makePlayer(i + 1, key, false)); });
@@ -142,6 +147,7 @@ export function createTable(opts) {
     const p = players[i], put = Math.min(amt, p.stack);
     p.stack -= put; p.bet += put; p.committed += put;
     if (p.stack === 0) p.allIn = true;
+    return put;
   }
 
   function collectBets() {
@@ -188,6 +194,9 @@ export function createTable(opts) {
   // Apply a {action, target} from any policy, and tell the observer about it.
   function apply(p, d, ctxInfo) {
     const toCall = Math.min(st.currentBet - p.bet, p.stack);
+    // Captured before the action moves any money, so the recorder can store
+    // the increment paid (`put`) alongside the resulting street total (`to`).
+    const stackBefore = p.stack, potBeforeAct = potBefore();
     if (onDecision) {
       onDecision({
         player: p, street: st.street, streetName: STREETS[Math.min(st.street, 4)],
@@ -198,10 +207,17 @@ export function createTable(opts) {
         info: ctxInfo || null, handNo: st.handNo,
       });
     }
-    if (d.action === 'raise' || d.action === 'bet') return applyRaise(p, d.target);
-    if (d.action === 'call') return applyCall(p, toCall);
-    if (d.action === 'check') return applyCheck(p);
-    return applyFold(p);
+    if (d.action === 'raise' || d.action === 'bet') applyRaise(p, d.target);
+    else if (d.action === 'call') applyCall(p, toCall);
+    else if (d.action === 'check') applyCheck(p);
+    else applyFold(p);
+    if (recorder) {
+      recorder.action({
+        seat: p.id, street: st.street, action: d.action,
+        put: stackBefore - p.stack, to: p.bet,
+        potBefore: potBeforeAct, toCall: toCall, allIn: p.allIn,
+      });
+    }
   }
 
   function botAct(p) {
@@ -260,8 +276,17 @@ export function createTable(opts) {
     let di = 0;
     for (let r = 0; r < 2; r++) players.forEach(function (p) { p.hole.push(st.deck[di++]); });
     st.deck = st.deck.slice(di);
+    // Opened after the deal and before the blinds, so the recorded stacks are
+    // the ones everyone sat down with this hand.
+    if (recorder) {
+      recorder.begin({
+        handNo: st.handNo, players: players, dealerIdx: st.dealerIdx, heroIndex: 0,
+        sb: SB, bb: BB, startStack: START_STACK,
+      });
+    }
     const sbIdx = (st.dealerIdx + 1) % players.length, bbIdx = (st.dealerIdx + 2) % players.length;
-    postBlind(sbIdx, SB); postBlind(bbIdx, BB);
+    const sbPut = postBlind(sbIdx, SB), bbPut = postBlind(bbIdx, BB);
+    if (recorder) { recorder.blind(players[sbIdx].id, sbPut); recorder.blind(players[bbIdx].id, bbPut); }
     st.currentBet = BB;
     return nextActive(bbIdx);
   }
@@ -274,6 +299,9 @@ export function createTable(opts) {
     else st.board.push(st.deck.pop());
     st.rangeIndex = buildRangeIndex(st.board);
     players.forEach(function (p) { p.rLo *= 0.88; p.rBluff *= 0.80; });
+    // Emitted after the range decay, so the snapshot is what everyone is
+    // repping going INTO the new street rather than leaving the old one.
+    if (recorder) recorder.street(st.street, st.board, players);
     return true;
   }
 
@@ -301,7 +329,7 @@ export function createTable(opts) {
     const before = players.map(function (p) { return p.stack; });
     let actingIdx = startHand();
     let guard = 0;
-    for (;;) {
+    for (; ;) {
       if (++guard > 5000) throw new Error('hand did not terminate');
       if (liveCount() === 1) break;
       if (roundComplete()) {
@@ -317,15 +345,44 @@ export function createTable(opts) {
       actingIdx = nextActive(actingIdx);
     }
     collectBets();
+    if (recorder) recorder.collect();
     // Any street still to come is dealt out so an all-in resolves properly.
-    while (st.board.length < 5 && liveCount() > 1) st.board.push(st.deck.pop());
+    // Recorded as real street events: to anyone replaying, a runout after an
+    // all-in looks exactly like a street that nobody could bet on, which is
+    // what it is.
+    while (st.board.length < 5 && liveCount() > 1) {
+      st.board.push(st.deck.pop());
+      // Only on a complete street. Dealing a runout one card at a time is an
+      // implementation detail; a replay showing a two-card flop is not a hand
+      // that ever existed.
+      if (recorder && st.board.length >= 3) recorder.street(st.board.length - 2, st.board, players);
+    }
+    const showdown = liveCount() > 1;
+    if (recorder && showdown) {
+      recorder.showdown(players.filter(function (p) { return !p.folded; }).map(function (p) {
+        return { seat: p.id, hole: p.hole, handName: '' };
+      }));
+    }
     const awards = computeResult(players, st.board);
     awards.forEach(function (a) {
       const share = Math.floor(a.amount / a.winners.length);
       const rem = a.amount - share * a.winners.length;
-      a.winners.forEach(function (w, i) { w.stack += share + (i === 0 ? rem : 0); });
+      a.winners.forEach(function (w, i) {
+        const got = share + (i === 0 ? rem : 0);
+        w.stack += got;
+        if (recorder) recorder.award(w.id, got);
+      });
     });
     st.pot = 0;
+    if (recorder) {
+      lastRecorded = recorder.finish({
+        net: players[0].stack - before[0],
+        potFinal: awards.reduce(function (s, a) { return s + a.amount; }, 0),
+        showdown: showdown,
+        heroFolded: players[0].folded,
+        winners: awards.length ? awards[0].winners.map(function (w) { return w.id; }) : [],
+      });
+    }
     return {
       handNo: st.handNo,
       net: players.map(function (p, i) { return p.stack - before[i]; }),
@@ -338,6 +395,9 @@ export function createTable(opts) {
   return {
     state: st, players: players, playHand: playHand, view: view,
     potBefore: potBefore, posOf: posOf, liveCount: liveCount,
+    // The hand the last playHand() recorded, or null when no recorder is
+    // attached. Lets a test play a hand and immediately replay it.
+    lastHand: function () { return lastRecorded; },
   };
 }
 

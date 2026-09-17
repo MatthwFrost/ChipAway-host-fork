@@ -1,33 +1,83 @@
-const BET_PRESETS = [
-  { label: '½ pot', fraction: '0.5' },
-  { label: '¾ pot', fraction: '0.75' },
-  { label: 'Pot', fraction: '1' },
-  { label: 'All in', fraction: 'max' },
-];
+import { useState } from 'react';
+import { HandsModal } from './HandsModal';
+import { TipsModal } from './TipsModal';
 
-export function ActionPanel() {
+// The betting controls themselves now live in the dock pinned to the bottom of
+// the panel (see SidePanel). What stays here is the record of the hand: the
+// running list of moves the engine appends to (#log), and the result card it
+// flips to afterwards. The coaching notes are a click away behind the bulb.
+export function ActionPanel({ onOpenSettings }) {
+  const [handsOpen, setHandsOpen] = useState(false);
+  const [tipsOpen, setTipsOpen] = useState(false);
+
+  // data-view is the engine's: "moves" while a hand runs, "result" once it is
+  // over, and back to "moves" when Review is pressed. Both faces stay mounted,
+  // so the engine can keep writing to #log and #handResult by id either way.
   return (
-    <section className="card-box" id="actionBox" aria-labelledby="actionLabel">
-      <div className="box-label" id="actionLabel">Your action</div>
-      <div className="drift" id="drift" />
-      <div className="leak" id="leak" />
-      <div className="status" id="status" aria-live="polite">Press <b>Deal hand</b> to start.</div>
-      <div className="btn-row">
-        <button className="btn-fold" id="btnFold" type="button" disabled>Fold</button>
-        <button className="btn-call" id="btnCall" type="button" disabled>Check</button>
-        <button className="btn-raise" id="btnRaise" type="button" disabled>Raise</button>
+    <div className="panel-block" id="actionBox" data-view="moves" aria-labelledby="actionLabel">
+      <div className="panel-head">
+        <div className="box-label" id="actionLabel">Game moves</div>
+        {/* Grouped in one box so a single auto margin pushes the pair to the
+            right edge. An auto margin on each would split the free space
+            between them and drive the two glyphs apart. */}
+        <div className="panel-head-actions">
+          {/* The engine adds .has-tips when drift or leak has something to say,
+              which is the only thing that lifts this out of its dimmed state. */}
+          <button
+            type="button"
+            className="panel-head-btn"
+            id="btnTips"
+            aria-label="Open tips"
+            aria-haspopup="dialog"
+            onClick={() => setTipsOpen(true)}
+          >
+            💡
+          </button>
+          <button
+            type="button"
+            className="panel-head-btn"
+            id="btnHandBook"
+            aria-label="Open the hand book"
+            aria-haspopup="dialog"
+            onClick={() => setHandsOpen(true)}
+          >
+            📖
+          </button>
+          <button
+            type="button"
+            className="panel-head-btn"
+            id="btnSettings"
+            aria-label="Open settings"
+            aria-haspopup="dialog"
+            onClick={onOpenSettings}
+          >
+            {/* U+FE0F forces the emoji cog. Bare U+2699 falls back to a text
+                glyph that draws small inside its em box, so it came out half
+                the size of the book however far the font-size was pushed. */}
+            ⚙️
+          </button>
+        </div>
       </div>
-      <div className="raise-row">
-        <output className="raise-amt" id="raiseAmt" htmlFor="raiseSlider">0</output>
-        <input type="range" id="raiseSlider" min="0" max="100" defaultValue="0" disabled aria-label="Raise amount" />
+      {/* The status line ("Your move in SB — 50 to call.") is off stage: the
+          amount to call is already on the dock and the street is on the table.
+          The element stays because the engine writes to #status every action. */}
+      <div className="status status-hidden" id="status" aria-hidden="true" />
+      {/* Move number, who acted, what they did. #log is the tbody the engine
+          appends rows to; the scroll lives on the wrapper, since a tbody is not
+          a scroll container. The placeholder carries a class so it is exempt
+          from the live-move highlight — the engine clears it on the first move. */}
+      <div className="log-scroll">
+        <table className="log">
+          <tbody id="log">
+            <tr className="log-empty"><td colSpan={3}>No hands played yet.</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div className="preset-row">
-        {BET_PRESETS.map(({ label, fraction }) => (
-          <button className="preset" data-frac={fraction} type="button" key={fraction}>{label}</button>
-        ))}
-      </div>
-      <button className="btn-deal" id="btnDeal" type="button">Deal hand</button>
-      <div id="evReview" />
-    </section>
+      {/* The other face: what the finished hand made or cost, and who took the
+          pot. The engine fills it in as the hand concludes. */}
+      <div className="hand-result" id="handResult" />
+      <HandsModal open={handsOpen} onClose={() => setHandsOpen(false)} />
+      <TipsModal open={tipsOpen} onClose={() => setTipsOpen(false)} />
+    </div>
   );
 }

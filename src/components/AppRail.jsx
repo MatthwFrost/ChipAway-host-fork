@@ -1,0 +1,93 @@
+// The global left-hand rail: what you'd see on any screen of the app, not just
+// the table. It sits outside .board-grid so the table/side-panel split below is
+// free to collapse on narrow screens without the rail moving with it.
+//
+// Home and Play are real screens now; the profile is still a placeholder and
+// carries no handler on purpose.
+
+export function AppRail({ screen = 'table', onNavigate = () => {} }) {
+  return (
+    <nav className="app-rail" aria-label="Main">
+      <div className="app-rail-brand">
+        <h1 className="app-rail-title">ChipAway</h1>
+        {/* The collapsed rail has no room for the wordmark, and an empty brand
+            row would leave a gap where the logo ought to be. CSS swaps this
+            monogram in at the same width the labels drop. */}
+        <span className="app-rail-short" aria-hidden="true">CA</span>
+      </div>
+
+      {/* Which row is marked follows the screen, the way chess.com's nav marks
+          its active section. */}
+      <div className="app-rail-nav">
+        <button
+          type="button"
+          className={`rail-btn rail-home${screen === 'home' ? ' is-active' : ''}`}
+          aria-current={screen === 'home' ? 'page' : undefined}
+          onClick={() => onNavigate('home')}
+        >
+          {/* One card, face-up, inked with a house — the same plate the Play fan
+              is built from, so the three marks read as one set. The ink is a
+              solid silhouette rather than an outline: next to a pip as heavy as
+              ♠ a hairline stroke reads as a smudge, not an icon. Drawn rather
+              than typed for the same reason the suits below are — ⌂ and ↺ are
+              missing or badly proportioned in plenty of UI fonts. */}
+          <span className="rail-mark" aria-hidden="true">
+            <span className="rail-card is-solo">
+              <svg className="rail-ink" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2.2 1.5 11.8H4.4V21H9.6V15.3H14.4V21H19.6V11.8H22.5Z" />
+              </svg>
+            </span>
+          </span>
+          <span className="rail-label">Home</span>
+        </button>
+
+        <button
+          type="button"
+          className={`rail-btn rail-play${screen === 'table' ? ' is-active' : ''}`}
+          aria-current={screen === 'table' ? 'page' : undefined}
+          onClick={() => onNavigate('table')}
+        >
+          {/* Two cards fanned face-up, built from the same face as the cards on
+              the table rather than a suit emoji — emoji suits render in colour
+              on some platforms and ignore the red/black we set. */}
+          <span className="rail-mark" aria-hidden="true">
+            <span className="rail-card is-back">♠</span>
+            <span className="rail-card is-front is-red">♥</span>
+          </span>
+          <span className="rail-label">Play</span>
+        </button>
+
+        <button
+          type="button"
+          className={`rail-btn rail-history${screen === 'history' ? ' is-active' : ''}`}
+          aria-current={screen === 'history' ? 'page' : undefined}
+          onClick={() => onNavigate('history')}
+        >
+          {/* The same card as Home, inked with a rewind — what the screen does
+              to a hand you've already played. A rewind rather than the usual
+              circular history arrow: an arc thin enough to curve is illegible
+              at 13px, where two solid triangles hold their shape. */}
+          <span className="rail-mark" aria-hidden="true">
+            <span className="rail-card is-solo">
+              <svg className="rail-ink" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.5 5.5V18.5L2.5 12Z" />
+                <path d="M21.5 5.5V18.5L12.5 12Z" />
+              </svg>
+            </span>
+          </span>
+          <span className="rail-label">History</span>
+        </button>
+      </div>
+
+      {/* margin-top:auto pins this to the floor of the rail, whatever grows
+          above it. */}
+      <button type="button" className="rail-profile">
+        <span className="rail-avatar" aria-hidden="true">M</span>
+        <span className="rail-profile-text">
+          <span className="rail-profile-name">Matty Frost</span>
+          <span className="rail-profile-meta"></span>
+        </span>
+      </button>
+    </nav>
+  );
+}

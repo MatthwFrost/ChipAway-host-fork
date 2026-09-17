@@ -32,22 +32,28 @@ test('the glossary is reachable from the page', () => {
   expect(screen.getByText('Pot odds')).toBeInTheDocument();
 });
 
-test('the coach panel is the decision output, asked for on demand', () => {
-  render(<CoachPanel />);
-  expect(screen.getByText('ChipAway Poker Coach')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Ask the coach' })).toBeInTheDocument();
+test('the coach panel is a bubble for one question — nothing to press, nothing to read off', () => {
+  const { container } = render(<CoachPanel />);
+  expect(screen.getByLabelText('ChipAway Poker Coach')).toBeInTheDocument();
+  expect(container.querySelector('#coachNudge')).toBeInTheDocument();
+  expect(screen.queryByRole('button')).toBeNull();
+  // The verdict and the maths belong to the hand review now. A stray detail
+  // node here would put the answer back on screen mid-hand.
+  expect(container.querySelectorAll('details')).toHaveLength(0);
 });
 
-test('equity is its own tab, not buried in the coach dropdown', () => {
+test('equity is just a bar — no number, no detail toggle competing for attention', () => {
   const { container } = render(<EquityPanel />);
-  expect(screen.getByText('Your equity')).toBeInTheDocument();
-  // range-adjusted is the headline, inside the ring; raw sits beside it, smaller
-  expect(container.querySelector('.eq-ring .eq-ring-num').id).toBe('eqAdjNum');
-  expect(container.querySelector('.eq-side .eq-raw-num').id).toBe('eqRawNum');
-  expect(screen.getByText(/Range-adjusted/)).toBeInTheDocument();
-  expect(screen.getByText(/vs a random hand/)).toBeInTheDocument();
-  expect(screen.getByText('How reliable is this?')).toBeInTheDocument();
-  expect(screen.getByText(/treat a couple of points either way as the same answer/)).toBeInTheDocument();
+  // the fill track is the only visible thing
+  expect(container.querySelector('.win-bar-track .m-win').id).toBe('mWin');
+  expect(container.querySelector('.win-bar-track .m-tie').id).toBe('mTie');
+  expect(container.querySelector('.win-bar-track .m-lose').id).toBe('mLose');
+  expect(container.querySelector('.win-bar-more')).toBeNull();
+  // the engine still writes these numbers every render, so they stay in the
+  // DOM (hidden) rather than being removed, or renderEquityTab would throw
+  const hidden = container.querySelector('.win-bar-hidden');
+  expect(hidden.querySelector('#eqAdjNum')).not.toBeNull();
+  expect(hidden.querySelector('#eqRawNum')).not.toBeNull();
 });
 
 test('the ring is a progress track that starts empty', () => {

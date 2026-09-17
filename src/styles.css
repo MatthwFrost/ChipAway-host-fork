@@ -1,290 +1,3235 @@
-:root{
-  --ink:#0A1210; --ink-2:#10201C; --line:#223730;
-  --felt:#1B4A40; --felt-lo:#12352E;
-  --rail:#3B2A20; --rail-hi:#5A4130;
-  --brass:#C9A227; --cream:#F4EFE3; --cream-dim:#C9C2B4;
-  --blood:#A63524; --slate:#7C8C88;
-  --win:#2E9E7B; --tie:#8A6F1C;
-  --radius:14px;
+:root {
+  --ink: #262421;
+  --ink-2: #302E2B;
+  --dark-ink: #1D1C1A;
+  --line: #4A4846;
+  --felt: #81B64C;
+  --felt-lo: #5D8E38;
+  --rail: #302E2B;
+  --rail-hi: #3C3A37;
+  --brass: #81B64C;
+  --cream: #E9E9E8;
+  --cream-dim: #B8B6B3;
+  --blood: #D64F4F;
+  --slate: #8B8987;
+  --win: #81B64C;
+  --tie: #D9A63C;
+  --radius: 6px;
+  --shadow-standard: 0 2px 8px rgba(0, 0, 0, .24);
 }
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--ink);color:var(--cream);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.45;display:flex;justify-content:center;padding:20px 16px 40px}
-.shell{width:100%;max-width:1220px}
-.masthead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:18px;border-bottom:1px solid var(--line)}
-.wordmark{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:clamp(22px,3.2vw,30px);letter-spacing:-.015em}
-.wordmark em{font-style:italic;color:var(--brass)}
-.masthead-meta{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate)}
-.board-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
-@media (max-width:920px){.board-grid{grid-template-columns:minmax(0,1fr)}}
 
-.table-outer{position:relative;aspect-ratio:16/11.6;min-height:470px;border-radius:50%/44%;background:linear-gradient(160deg,var(--rail-hi),var(--rail) 55%,#2A1D15);padding:clamp(12px,2.2vw,22px);box-shadow:0 24px 60px rgba(0,0,0,.55), inset 0 2px 0 rgba(255,255,255,.07)}
-.felt{position:relative;height:100%;width:100%;border-radius:50%/44%;background:radial-gradient(ellipse at 50% 38%, #24594D 0%, var(--felt) 45%, var(--felt-lo) 100%);box-shadow:inset 0 0 60px rgba(0,0,0,.5), inset 0 0 0 2px rgba(201,162,39,.22)}
-.felt::after{content:"";position:absolute;inset:7%;border-radius:50%/44%;border:1px solid rgba(201,162,39,.14);pointer-events:none}
-.centre{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:10px;width:82%}
-.dealer-strip{display:flex;align-items:center;gap:9px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:rgba(244,239,227,.55)}
-.deck-stub{width:26px;height:36px;border-radius:4px;background:repeating-linear-gradient(135deg,#2B4C6B 0 4px,#22405A 4px 8px);border:1.5px solid rgba(244,239,227,.45);box-shadow:2px 2px 0 rgba(0,0,0,.35)}
-.board-cards{display:flex;gap:6px;min-height:74px;align-items:center}
-.pot-tag{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--brass);background:rgba(0,0,0,.34);border:1px solid rgba(201,162,39,.32);border-radius:999px;padding:4px 14px;transition:transform .3s}
-.pot-tag.bump{transform:scale(1.12)}
-.street-tag{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(244,239,227,.5);text-align:center}
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0
+}
 
-.card{width:44px;height:62px;border-radius:5px;flex:none;background:linear-gradient(170deg,#FFFDF7,var(--cream));color:#17211E;box-shadow:0 3px 8px rgba(0,0,0,.42);display:flex;flex-direction:column;justify-content:space-between;padding:4px 5px;font-family:'Fraunces',Georgia,serif;animation:dealIn .42s cubic-bezier(.16,.8,.3,1) both}
-.card.sm{width:34px;height:48px;padding:3px 4px}
-.card .rank{font-size:15px;font-weight:700;line-height:1}
-.card.sm .rank{font-size:12px}
-.card .pip{font-size:19px;line-height:1;align-self:flex-end}
-.card.sm .pip{font-size:14px}
-.card.red{color:var(--blood)}
-.card.back{background:repeating-linear-gradient(135deg,#2B4C6B 0 5px,#22405A 5px 10px);border:1.5px solid rgba(244,239,227,.4)}
-.card.mucked{opacity:.4;filter:grayscale(.7)}
-@keyframes dealIn{from{opacity:0;transform:translateY(-18px) scale(.88)}to{opacity:1;transform:none}}
+html,
+body {
+  height: 100%
+}
 
-.seat{position:absolute;transform:translate(-50%,-50%);width:132px;display:flex;flex-direction:column;align-items:center;gap:4px;transition:opacity .45s ease}
-.seat.folded{opacity:.4}
-.act-badge{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;padding:4px 10px;border-radius:999px;white-space:nowrap;background:#16241F;border:1px solid #2C443C;color:var(--cream-dim);opacity:0;transform:translateY(5px);transition:opacity .35s,transform .35s,background .3s,color .3s;min-height:22px;display:flex;align-items:center}
-.act-badge.show{opacity:1;transform:none}
-.act-badge.b-fold{background:#2B1A17;border-color:#5A2E24;color:#D2705C}
-.act-badge.b-passive{background:#17332C;border-color:#2F5E51;color:#7FCBB2}
-.act-badge.b-aggro{background:linear-gradient(180deg,#E4C862,var(--brass));border-color:#E8CE74;color:#1A1405}
-.act-badge.b-blind{background:#1A241F;border-color:#33443D;color:var(--slate)}
-.act-badge.b-think{background:#16241F;border-color:var(--brass);color:var(--brass);animation:pulse 1.1s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
-.seat-cards{display:flex;gap:3px;justify-content:center;min-height:48px}
-.seat-plate-wrap{position:relative;width:100%}
-.seat-plate{width:100%;background:rgba(8,18,15,.86);border:1px solid rgba(244,239,227,.13);border-radius:10px;padding:6px 8px;text-align:center;transition:border-color .3s,box-shadow .3s}
-.seat.acting .seat-plate{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass),0 0 22px rgba(201,162,39,.3)}
-.seat.hero .seat-plate{background:rgba(12,28,24,.95);border-color:rgba(201,162,39,.38)}
-.seat.villain .seat-plate{border-color:#D2705C;box-shadow:0 0 0 1px #D2705C}
-.seat-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.seat-pos{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--slate)}
-.seat-style{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--brass);opacity:0;max-height:0;overflow:hidden;transition:opacity .3s,max-height .3s}
-.seat-style.shown{opacity:1;max-height:14px}
-.seat-stack{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--brass);margin-top:2px}
-.dealer-btn{position:absolute;top:-8px;right:-8px;width:21px;height:21px;border-radius:50%;background:var(--cream);color:#17211E;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.5);opacity:0;transition:opacity .3s}
-.dealer-btn.shown{opacity:1}
+body {
+  background: var(--ink-2);
+  color: var(--cream);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.45
+}
 
-.panel{display:flex;flex-direction:column;gap:13px}
-.card-box{background:var(--ink-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
-.card-box.hot{border-color:#5A2E24;box-shadow:0 0 0 1px rgba(210,112,92,.4)}
-.box-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--slate);margin-bottom:10px}
-.status{font-size:13px;color:var(--cream-dim);min-height:38px;margin-bottom:11px}
-.status b{color:var(--brass)}
-.btn-row{display:flex;gap:8px;flex-wrap:wrap}
-button{font-family:'Inter',sans-serif;font-size:14px;font-weight:600;border-radius:9px;border:1px solid #2C443C;padding:11px 18px;cursor:pointer;transition:background .16s,transform .08s,border-color .16s;color:var(--cream);background:#1B2E28}
-button:hover:not(:disabled){background:#22392F;transform:translateY(-1px)}
-button:active:not(:disabled){transform:none}
-button:disabled{opacity:.3;cursor:not-allowed}
-button:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
-.btn-fold{background:#2B1A17;border-color:#4A2A22;flex:1}
-.btn-fold:hover:not(:disabled){background:#3A221D}
-.btn-call{background:#1D3D34;border-color:#2F5E51;flex:1}
-.btn-call:hover:not(:disabled){background:#245045}
-.btn-raise{background:linear-gradient(180deg,#D8B23A,var(--brass));color:#1A1405;border-color:#E0C367;flex:1}
-.btn-raise:hover:not(:disabled){background:linear-gradient(180deg,#E2BF4C,#D3AC2E)}
-.btn-deal{width:100%;margin-top:9px}
-.raise-row{display:flex;align-items:center;gap:10px;margin-top:11px}
-input[type=range]{flex:1;min-width:110px;accent-color:var(--brass)}
-.raise-amt{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--brass);min-width:58px}
-.preset-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-.preset{font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px 10px;border-radius:7px;background:#16241F;border:1px solid #2C443C;color:var(--cream-dim);cursor:pointer;font-weight:400}
-.preset:hover{background:#1E3129;color:var(--cream);transform:none}
-.guess-q{font-size:13px;color:var(--cream-dim);margin-bottom:11px;line-height:1.5}
-.guess-q b{color:#D2705C}
-.guess-opt{display:block;width:100%;text-align:left;margin-bottom:6px;font-size:13px;padding:10px 12px}
-.guess-skip{width:100%;background:transparent;font-size:12px;color:var(--slate);padding:8px}
-.guess-result{font-size:13px;line-height:1.5;margin-bottom:10px;display:block}
-.guess-result.right{color:#7FCBB2}
-.guess-result.wrong{color:#D2705C}
-.eq-hidden{text-align:center;padding:6px 0 2px}
-.eq-hidden p{font-size:12px;color:var(--slate);margin-bottom:10px;line-height:1.5}
-.btn-reveal{width:100%;background:transparent;border-color:#2C443C;font-size:13px;color:var(--cream-dim)}
-.eq-body{display:none}
-.eq-body.open{display:block}
-.equity-figure{font-family:'JetBrains Mono',monospace;font-size:34px;font-weight:700;line-height:1;letter-spacing:-.02em}
-.equity-figure span{font-size:16px;color:var(--slate);font-weight:600}
-.eq-sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--slate);margin-top:5px;line-height:1.6}
-.eq-sub b{color:var(--cream-dim)}
-.equity-hand{font-family:'Fraunces',Georgia,serif;font-size:15px;font-weight:600;color:var(--brass);margin-top:3px;min-height:20px}
-.meter{display:flex;height:9px;border-radius:999px;overflow:hidden;background:#0A1512;margin-top:11px;border:1px solid var(--line)}
-.meter i{display:block;height:100%;transition:width .5s ease}
-.m-win{background:linear-gradient(90deg,#2E9E7B,#48C39B)}
-.m-tie{background:var(--tie)}
-.m-lose{background:#6E2B1F}
-.meter-key{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--slate);margin-top:6px}
-.odds-note{font-size:12px;color:var(--cream-dim);margin-top:10px;padding-top:10px;border-top:1px solid var(--line);line-height:1.5}
-.odds-note b{color:var(--cream);font-family:'JetBrains Mono',monospace}
-.verdict{font-weight:600}
-.verdict.good{color:var(--win)}
-.verdict.bad{color:#D2705C}
-.rangebar{margin-top:9px}
-.rangebar .rb-lab{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--slate);margin-bottom:3px}
-.rb-track{position:relative;height:11px;border-radius:4px;background:#0A1512;border:1px solid var(--line);overflow:hidden}
-.rb-val{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,rgba(201,162,39,.35),var(--brass))}
-.rb-bluff{position:absolute;top:0;bottom:0;left:0;background:repeating-linear-gradient(45deg,#6E2B1F 0 3px,#8A3626 3px 6px)}
-.setup-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
-.setup-row label{font-size:12px;color:var(--cream-dim);width:74px;flex:none}
-select{flex:1;background:#16241F;color:var(--cream);border:1px solid #2C443C;border-radius:7px;padding:6px 8px;font-family:'Inter',sans-serif;font-size:12px}
-select:focus-visible{outline:2px solid var(--brass)}
-.speed-row{display:flex;gap:6px;margin-top:4px}
-.speed-btn{flex:1;font-family:'JetBrains Mono',monospace;font-size:11px;padding:7px 4px;border-radius:7px;background:#16241F;border:1px solid #2C443C;color:var(--cream-dim);font-weight:400}
-.speed-btn.on{background:#22392F;color:var(--brass);border-color:var(--brass)}
-.mini-note{font-size:11px;color:#55635F;line-height:1.5;margin-top:9px}
-details{background:var(--ink-2);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
-summary{padding:13px 14px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--slate);list-style:none}
-summary::-webkit-details-marker{display:none}
-summary::after{content:"+";float:right;font-size:13px}
-details[open] summary::after{content:"–"}
-summary:hover{color:var(--cream-dim)}
-.details-body{padding:0 14px 14px}
-.log{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.8;max-height:230px;overflow-y:auto;color:var(--cream-dim)}
-.log div{border-bottom:1px dotted #1E2E29;padding:1px 0}
-.log .hl{color:var(--brass)}
-.log .street{color:var(--cream);letter-spacing:.1em;text-transform:uppercase;font-size:10px;padding-top:6px}
-.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.stat{background:#16241F;border:1px solid #223730;border-radius:9px;padding:9px 10px}
-.stat .k{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate)}
-.stat .v{font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:700;color:var(--cream);margin-top:2px}
-.stat .v small{font-size:10px;color:var(--slate);font-weight:400}
-.classify{margin-top:11px}
-.classify-out{display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--cream-dim);line-height:1.55}
-.classify-out.open{display:block}
-.classify-out .big{font-family:'Fraunces',Georgia,serif;font-size:20px;font-weight:600;color:var(--brass);display:block;margin-bottom:4px}
-.footnote{margin-top:14px;font-size:11px;color:#55635F;line-height:1.6;border-top:1px solid #1B2A26;padding-top:11px}
-.log-wrap{margin-top:16px;display:flex;flex-direction:column;gap:12px}
+/* The board reserves the fixed rail's width so it never slides underneath it. */
+.shell {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  align-items: stretch;
+  padding-left: 208px
+}
 
-.fe-tab{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:11px;margin-top:8px}
-.fe-tab th{text-align:left;color:var(--slate);font-weight:400;font-size:9px;letter-spacing:.09em;text-transform:uppercase;padding:0 0 4px}
-.fe-tab td{padding:3px 0;border-top:1px solid #1B2A26;color:var(--cream-dim)}
-.fe-tab td:first-child{color:var(--cream)}
-.fe-good{color:var(--win);font-weight:700}
-.fe-bad{color:#D2705C}
-.rg-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
-.rg-btn{flex:1 1 40%;font-family:'JetBrains Mono',monospace;font-size:10px;padding:7px 4px;border-radius:7px;background:#16241F;border:1px solid #2C443C;color:var(--cream-dim);font-weight:400}
-.rg-btn:hover{background:#1E3129;transform:none}
-.rg-out{font-size:11.5px;line-height:1.5;margin-top:8px;color:var(--cream-dim)}
-.rg-out b{color:var(--brass);font-family:'JetBrains Mono',monospace}
-.image-line{font-size:12px;color:var(--cream-dim);line-height:1.5}
-.image-line b{color:var(--brass);font-family:'JetBrains Mono',monospace}
-.drift{display:none;font-size:12px;line-height:1.45;color:#E0B36A;background:#241C0E;border:1px solid #4A3A16;border-radius:9px;padding:9px 11px;margin-bottom:11px}
-.drift.on{display:block}
-.cf-line{font-size:12px;color:var(--cream-dim);line-height:1.6;margin-top:8px;padding-top:9px;border-top:1px solid var(--line)}
-.cf-line b{color:var(--cream);font-family:'JetBrains Mono',monospace}
-.cf-win{color:var(--win);font-weight:600}
-.cf-lose{color:#D2705C;font-weight:600}
-.fb-field{margin-bottom:9px}
-.fb-field label{display:block;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate);margin-bottom:4px}
-.fb-field input,.fb-field textarea,.fb-field select{width:100%;background:#16241F;color:var(--cream);border:1px solid #2C443C;border-radius:7px;padding:8px 9px;font-family:'Inter',sans-serif;font-size:13px}
-.fb-field textarea{min-height:78px;resize:vertical}
-.fb-field input:focus-visible,.fb-field textarea:focus-visible,.fb-field select:focus-visible{outline:2px solid var(--brass)}
-.fb-hp{position:absolute;left:-9999px}
-.fb-msg{font-size:12px;line-height:1.5;margin-top:9px;display:none}
-.fb-msg.on{display:block}
-.fb-msg.ok{color:#7FCBB2}
-.fb-msg.err{color:#E0B36A}
-.build-tag{font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E4B47;margin-top:10px}
+/* ---- app rail: the global left-hand column ---- */
 
-.ct-wrap{margin-top:11px;padding-top:10px;border-top:1px solid var(--line)}
-.ct-head{font-family:'Fraunces',Georgia,serif;font-size:14px;font-weight:600;color:var(--brass);margin-bottom:6px}
-.ct-list{margin:0;padding-left:16px}
-.ct-list li{font-size:11.5px;line-height:1.55;color:var(--cream-dim);margin-bottom:4px}
-.ct-toggle{width:100%;background:transparent;border-color:#2C443C;font-size:12px;color:var(--cream-dim);margin-top:9px;padding:8px}
-.val-box{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
-.val-head{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate);margin-bottom:7px}
-.val-tab{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:11px}
-.val-tab th{text-align:left;color:var(--slate);font-weight:400;font-size:9px;letter-spacing:.09em;text-transform:uppercase;padding:0 0 4px}
-.val-tab td{padding:3px 0;border-top:1px solid #1B2A26;color:var(--cream-dim)}
-.val-tab tr.peak td{color:var(--brass);font-weight:700}
-.val-bar{display:inline-block;height:7px;border-radius:2px;background:linear-gradient(90deg,rgba(201,162,39,.4),var(--brass));vertical-align:middle}
-.val-note{font-size:11.5px;color:var(--cream-dim);line-height:1.5;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
-.val-note b{color:var(--brass)}
-.ev-box{margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
-.ev-line{font-size:12px;line-height:1.55;color:var(--cream-dim);margin-bottom:4px}
-.ev-line b{font-family:'JetBrains Mono',monospace;color:var(--cream)}
-.ev-pos{color:var(--win);font-weight:700}
-.fq-tied{font-size:10px;color:#55635F;letter-spacing:.02em}
-.ev-neg{color:#D2705C;font-weight:700}
-.ev-miss{background:#241C0E;border:1px solid #4A3A16;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.5;color:#E0B36A;margin-top:9px}
-.ev-good{background:#132A24;border:1px solid #245045;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.5;color:#7FCBB2;margin-top:9px}
-.leak{background:#241C0E;border:1px solid #4A3A16;border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.5;color:#E0B36A;margin-bottom:11px;display:none}
-.leak.on{display:block}
-.leak b{color:#F0CE8E}
-.spark-wrap{margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
-.spark-head{display:flex;justify-content:space-between;align-items:baseline;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate);margin-bottom:6px}
-.spark-head span:last-child{color:var(--cream-dim);letter-spacing:0;text-transform:none;font-size:10px}
-svg.spark{width:100%;height:52px;display:block;overflow:visible}
-.ev-tot{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;line-height:1.1}
-.ev-tot small{font-size:10px;color:var(--slate);font-weight:400;letter-spacing:.06em;text-transform:uppercase;display:block;margin-top:2px}
-.reset-btn{width:100%;margin-top:10px;background:transparent;border-color:#3A2A22;color:#9A8478;font-size:12px;padding:8px}
-.reset-btn:hover{background:#2B1A17;color:#D2705C}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-@media (max-width:620px){.table-outer{aspect-ratio:auto;height:560px;padding:10px}.seat{width:100px}.card{width:34px;height:48px}.card .rank{font-size:12px}.card .pip{font-size:14px}}
+/* Chrome, not content, so it takes the darker surface the side-panel header
+   uses rather than the panel colour. */
+.app-rail {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 10;
+  height: 100vh;
+  width: 208px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 12px;
+  background: var(--dark-ink);
+}
+
+/* No rule under the wordmark: chess.com's left nav separates the logo from the
+   nav list with space alone, and a divider here would fight the ones inside
+   the side panel. */
+.app-rail-brand {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px 10px
+}
+
+.app-rail-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.2;
+  color: var(--cream)
+}
+
+/* Out of the way until the rail collapses — see the 920px block below. */
+.app-rail-short {
+  display: none;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--cream)
+}
+
+/* Takes the slack between the wordmark and the profile, and scrolls rather
+   than shoving the profile off the bottom on a short window. */
+.app-rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto
+}
+
+/* Nav rows, not controls. Chess.com's are transparent until you touch them:
+   a chunky icon, a bold label, and the whole row lighting up on hover. The
+   global button rule wants to give this a border, a fill and a 1px lift, and
+   all three have to come off for a row this wide to read as navigation. */
+.rail-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 10px;
+  background: transparent;
+  border-color: transparent;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left
+}
+
+.rail-btn:hover:not(:disabled) {
+  background: var(--rail-hi);
+  color: var(--cream);
+  transform: none
+}
+
+/* The section you're in. A fill one step up from the rail and a full-strength
+   label, so it sits above the other rows without shouting. */
+.rail-btn.is-active {
+}
+
+/* Every mark gets the same box, so the three labels line up instead of
+   staggering behind glyphs with their own advance widths. */
+.rail-mark {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 22px
+}
+
+/* One playing card. Same face as the cards on the table — see .card — so the
+   marks belong to this app rather than being stock glyphs: Play fans two of
+   these, Home and History each ink a single one. */
+.rail-card {
+  position: absolute;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 22px;
+  border-radius: 3px;
+  background: linear-gradient(170deg, #FFFDF7, var(--cream));
+  color: #17211E;
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+  transition: transform .16s
+}
+
+/* A lone card is centred in the box and carries the fan's tilt, so the three
+   marks share a silhouette and not just a material — an upright plate between
+   two dealt ones looks like a different set. A pip card can be 16px wide
+   because ♠ is small; an inked one needs the width to keep its icon off the
+   rounded corners, so it gets 19 and re-centres. */
+.rail-card.is-solo {
+  left: 3.5px;
+  width: 19px;
+  transform: rotate(-5deg);
+  transform-origin: bottom center
+}
+
+/* Sized to the pips it sits beside: ♠ is 11px on a 16px card, so 13px on a
+   19px one lands at the same proportion of the face. */
+.rail-ink {
+  display: block;
+  width: 13px;
+  height: 13px
+}
+
+.rail-card.is-back {
+  left: 0;
+  transform: rotate(-12deg);
+  transform-origin: bottom right
+}
+
+.rail-card.is-front {
+  left: 10px;
+  transform: rotate(10deg);
+  transform-origin: bottom left
+}
+
+.rail-card.is-red {
+  color: var(--blood)
+}
+
+/* Everything moves under the cursor: the hand fans, the single card tilts as
+   if you were picking it up. The global reduced-motion rule further down
+   switches all of it off. */
+.rail-play:hover .rail-card.is-back {
+  transform: rotate(-20deg)
+}
+
+.rail-play:hover .rail-card.is-front {
+  transform: rotate(18deg)
+}
+
+.rail-btn:hover .rail-card.is-solo {
+  transform: rotate(-11deg)
+}
+
+/* Pinned to the floor of the rail by the auto margin, whatever grows above. */
+.rail-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  width: 100%;
+  padding: 8px 9px;
+  background: transparent;
+  border-color: transparent;
+  text-align: left
+}
+
+/* The 1px lift on the global button rule reads as a jolt on a row this wide,
+   so this one lights up instead of moving. */
+.rail-profile:hover:not(:disabled) {
+  background: var(--rail-hi);
+  border-color: var(--line);
+  transform: none
+}
+
+.rail-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--rail-hi);
+  color: var(--cream-dim);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1
+}
+
+.rail-profile-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25
+}
+
+.rail-profile-name {
+  font-size: 13px;
+  color: var(--cream)
+}
+
+.rail-profile-meta {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--slate)
+}
+
+/* Below the board's own breakpoint the rail drops its labels and keeps only
+   the glyphs, so the table gets the width back. */
+@media (max-width:920px) {
+  .shell {
+    padding-left: 56px
+  }
+
+  .app-rail {
+    width: 56px;
+    gap: 14px;
+    padding: 14px 8px;
+    align-items: center
+  }
+
+  .app-rail-brand {
+    justify-content: center;
+    width: 100%;
+    padding: 4px 0 8px
+  }
+
+  .app-rail-title,
+  .rail-label,
+  .rail-profile-text {
+    display: none
+  }
+
+  .app-rail-short {
+    display: block
+  }
+
+  .rail-btn,
+  .rail-profile {
+    justify-content: center;
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0
+  }
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line)
+}
+
+.wordmark {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: clamp(22px, 3.2vw, 30px);
+  letter-spacing: -.015em
+}
+
+.wordmark em {
+  font-style: italic;
+  color: var(--brass)
+}
+
+.masthead-meta {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--slate)
+}
+
+/* A flex child of .shell now, so it needs min-width:0: without it the grid
+   refuses to shrink past its content and pushes the rail off screen. */
+.board-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 26vw, 420px);
+  gap: 20px;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  height: 100%
+}
+
+.table-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 20px 0 20px 20px
+}
+
+.table-col .table-outer {
+  align-self: center;
+  width: 100%
+}
+
+.table-player-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 760px);
+  margin: auto auto 0;
+  padding: 0 8px;
+  color: var(--cream-dim)
+}
+
+.table-player-avatar {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 6px;
+  background: linear-gradient(145deg, #526A86, #263847);
+  color: var(--cream);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .3)
+}
+
+.table-player-copy {
+  min-width: 0
+}
+
+.table-player-name {
+  color: var(--cream);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap
+}
+
+.table-player-name span {
+  font-size: 13px
+}
+
+.table-player-earned {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 1px;
+  color: var(--slate);
+  font-size: 12px;
+  letter-spacing: 0;
+  min-height: 20px
+}
+
+.earned-figure {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums
+}
+
+.earned-figure.pos {
+  color: var(--win)
+}
+
+.earned-figure.neg {
+  color: var(--blood)
+}
+
+.earned-figure.flat {
+  color: var(--cream-dim)
+}
+
+.earned-sub {
+  white-space: nowrap
+}
+
+.table-match-record {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0
+}
+
+.table-match-label {
+  color: var(--slate);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap
+}
+
+.table-match-results {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 20px
+}
+
+.match-result {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1
+}
+
+.match-result.win {
+  background: rgba(129, 182, 76, .2);
+  color: #A8D874
+}
+
+.match-result.loss {
+  background: rgba(214, 79, 79, .18);
+  color: #F08080
+}
+
+.match-result.even {
+  background: rgba(184, 182, 179, .16);
+  color: var(--cream-dim)
+}
+
+.table-match-score {
+  min-width: 28px;
+  color: var(--cream);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right
+}
+
+@media (max-width:920px) {
+  .board-grid {
+    grid-template-columns: minmax(0, 1fr)
+  }
+
+  .table-player-bar {
+    width: 100%;
+    padding: 0 2px
+  }
+}
+
+.table-outer {
+  position: relative;
+  aspect-ratio: 16/11.6;
+  min-height: 470px;
+  border-radius: 50%/44%;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  padding: clamp(12px, 2.2vw, 22px);
+  box-shadow: var(--shadow-standard)
+}
+
+.felt {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  border-radius: 50%/44%;
+  background: var(--felt);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .15)
+}
+
+.felt::after {
+  content: "";
+  position: absolute;
+  inset: 7%;
+  border-radius: 50%/44%;
+  border: 1px solid rgba(0, 0, 0, .12);
+  pointer-events: none
+}
+
+.centre {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 82%
+}
+
+.dealer-strip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: rgba(233, 233, 232, .55)
+}
+
+.deck-stub {
+  width: 26px;
+  height: 36px;
+  border-radius: 4px;
+  background: repeating-linear-gradient(135deg, #2B4C6B 0 4px, #22405A 4px 8px);
+  border: 1.5px solid rgba(233, 233, 232, .45);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, .35)
+}
+
+.board-cards {
+  display: flex;
+  gap: 6px;
+  min-height: 74px;
+  align-items: center
+}
+
+.pot-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--brass);
+  background: rgba(0, 0, 0, .34);
+  border: 1px solid rgba(129, 182, 76, .32);
+  border-radius: 6px;
+  padding: 4px 14px;
+  transition: transform .3s
+}
+
+.pot-tag.bump {
+  transform: scale(1.12)
+}
+
+.street-tag {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: rgba(233, 233, 232, .5);
+  text-align: center
+}
+
+.card {
+  width: 44px;
+  height: 62px;
+  border-radius: 5px;
+  flex: none;
+  background: linear-gradient(170deg, #FFFDF7, var(--cream));
+  color: #17211E;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .42);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 4px 5px;
+  font-family: 'Inter', system-ui, sans-serif;
+  animation: dealIn .42s cubic-bezier(.16, .8, .3, 1) both
+}
+
+.card.sm {
+  width: 34px;
+  height: 48px;
+  padding: 3px 4px
+}
+
+.card .rank {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1
+}
+
+.card.sm .rank {
+  font-size: 12px
+}
+
+.card .pip {
+  font-size: 19px;
+  line-height: 1;
+  align-self: flex-end
+}
+
+.card.sm .pip {
+  font-size: 14px
+}
+
+.card.red {
+  color: var(--blood)
+}
+
+.card.back {
+  background: repeating-linear-gradient(135deg, #2B4C6B 0 5px, #22405A 5px 10px);
+  border: 1.5px solid rgba(233, 233, 232, .4)
+}
+
+.card.mucked {
+  opacity: .4;
+  filter: grayscale(.7)
+}
+
+@keyframes dealIn {
+  from {
+    opacity: 0;
+    transform: translateY(-18px) scale(.88)
+  }
+
+  to {
+    opacity: 1;
+    transform: none
+  }
+}
+
+.seat {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: opacity .45s ease
+}
+
+.seat.folded {
+  opacity: .4
+}
+
+.act-badge {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: #3C3A37;
+  border: 1px solid #4A4846;
+  color: var(--cream-dim);
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity .35s, transform .35s, background .3s, color .3s;
+  min-height: 22px;
+  display: flex;
+  align-items: center
+}
+
+.act-badge.show {
+  opacity: 1;
+  transform: none
+}
+
+.act-badge.b-fold {
+  background: #2B1A17;
+  border-color: #5A2E24;
+  color: #D64F4F
+}
+
+.act-badge.b-passive {
+  background: #16283A;
+  border-color: #2F5E7A;
+  color: #7FB3E0
+}
+
+.act-badge.b-aggro {
+  background: var(--brass);
+  border-color: #9BCB69;
+  color: #132B0A
+}
+
+.act-badge.b-blind {
+  background: #1A241F;
+  border-color: #33443D;
+  color: var(--slate)
+}
+
+.act-badge.b-think {
+  background: #3C3A37;
+  border-color: var(--brass);
+  color: var(--brass);
+  animation: pulse 1.1s ease-in-out infinite
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: .55
+  }
+
+  50% {
+    opacity: 1
+  }
+}
+
+.seat-cards {
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+  min-height: 48px
+}
+
+.seat-plate-wrap {
+  position: relative;
+  width: 100%
+}
+
+.seat-plate {
+  width: 100%;
+  background: rgba(8, 18, 15, .86);
+  border: 1px solid rgba(233, 233, 232, .13);
+  border-radius: 10px;
+  padding: 6px 8px;
+  text-align: center;
+  transition: border-color .3s, box-shadow .3s
+}
+
+.seat.acting .seat-plate {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 1px var(--brass), 0 0 22px rgba(129, 182, 76, .3)
+}
+
+.seat.hero .seat-plate {
+  background: rgba(12, 28, 24, .95);
+  border-color: rgba(129, 182, 76, .38)
+}
+
+.seat.villain .seat-plate {
+  border-color: #D64F4F;
+  box-shadow: 0 0 0 1px #D64F4F
+}
+
+.seat-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.seat-pos {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 9px;
+  letter-spacing: .12em;
+  color: var(--slate)
+}
+
+.seat-style {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--brass);
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity .3s, max-height .3s
+}
+
+.seat-style.shown {
+  opacity: 1;
+  max-height: 14px
+}
+
+.seat-stack {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brass);
+  margin-top: 2px
+}
+
+.dealer-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: var(--cream);
+  color: #17211E;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .5);
+  opacity: 0;
+  transition: opacity .3s
+}
+
+.dealer-btn.shown {
+  opacity: 1
+}
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 15px;
+}
+
+.side-panel-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--dark-ink);
+}
+
+.side-panel-icon {
+  font-size: 20px;
+  line-height: 1
+}
+
+/* The icon span is currently empty; drop it from the flex row so the
+   10px gap doesn't push the title off-centre. */
+.side-panel-icon:empty {
+  display: none;
+}
+
+.side-panel-header h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--cream)
+}
+
+/* Keep this region to its content height so Game moves can start directly
+  beneath Equity instead of being pushed to the bottom by unused space. */
+.side-panel-scroll {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px
+}
+
+.panel-block {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--dark-line);
+}
+
+/* A block heading with its icon, sat above a rule that runs the full width of
+   the panel: the negative margins cancel the 16px padding on
+   .side-panel-scroll so the line reaches both edges. */
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -16px 4px;
+  padding: 0 16px 5px;
+  border-bottom: 1px solid var(--ink-2);
+}
+
+.panel-head .box-label {
+  margin-bottom: 0;
+}
+
+.panel-head-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* A bare glyph button sat at the right end of a panel head. margin-left:auto
+   absorbs the leftover flex space and pushes it to the edge; the rest undoes
+   the global button chrome so only the glyph shows. */
+/* One auto margin on the group, not on each button: two auto margins would
+   share the free space out between them and split the glyphs apart. */
+.panel-head-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* A fixed square box, so both glyphs get the same hit area and the same
+   footprint regardless of how wide the character itself draws. */
+.panel-head-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  opacity: .75;
+}
+
+/* The cog is a plain text glyph, not a colour emoji, and draws a good deal
+   smaller at the same font-size. Sized up to match the book optically. */
+
+.panel-head-btn:hover:not(:disabled) {
+  background: transparent;
+  transform: none;
+  opacity: 1;
+}
+
+/* The bulb is dim until there is actually a note waiting behind it. */
+.panel-head-btn.has-tips {
+  opacity: 1;
+}
+
+/* Tips is a short read, so it gets a narrower panel than settings. */
+.modal-panel.is-small {
+  max-width: 360px;
+}
+
+/* The empty state and the notes are mutually exclusive: the engine flips
+   data-tips on the wrapper, and each side shows only in its own state. */
+#tipsBox[data-tips=on] #tipsEmpty {
+  display: none;
+}
+
+#tipsBox .drift,
+#tipsBox .leak {
+  margin-bottom: 0;
+}
+
+/* The hand book: what beats what, strongest first. Name and blurb stack in the
+   left column, the example cards sit centred in the right one. */
+.hand-book {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hand-book-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ink-2);
+}
+
+.hand-book-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.hand-book-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--brass);
+}
+
+.hand-book-cards {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  display: flex;
+  gap: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  color: var(--cream);
+  white-space: nowrap;
+}
+
+.hb-red {
+  color: var(--blood);
+}
+
+.hand-book-blurb {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--cream-dim);
+}
+
+.panel-block:last-child {
+  border-bottom: 0;
+  padding-bottom: 0
+}
+
+/* The moves block is the only elastic thing in the panel: it takes every pixel
+   the coach and win bar leave, so the list runs down towards the dock instead
+   of stopping short with dead space under it.
+
+   It sits outside .side-panel-scroll (see SidePanel), so it carries its own
+   16px padding — the full-bleed negative margins inside it are all written
+   against that figure. It is the only item here with flex-grow, which is what
+   keeps it hard against the equity bar above instead of leaving a gap. And
+   min-height is a floor, not 0: when the coach runs long that column scrolls
+   rather than this block giving up its height, which is what keeps the newest
+   move on screen. */
+#actionBox {
+  flex: 1 1 0;
+  min-height: 168px;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 16px
+}
+
+.action-dock {
+  flex: none;
+  border-top: 1px solid var(--line);
+  background: var(--dark-ink)
+}
+
+/* Three faces, one dock: the engine sets data-phase, the CSS picks the face.
+   Every group stays in the DOM so the engine's listeners never go stale. */
+.phase-group {
+  display: none;
+  flex: 1;
+  gap: 8px
+}
+
+.action-dock[data-phase=pre] .phase-pre,
+.action-dock[data-phase=live] .phase-live,
+.action-dock[data-phase=post] .phase-post {
+  display: flex
+}
+
+/* The 40px top reserves the amount-tab strip in every phase, not just during a
+   hand. Reserving it only when live made the dock 26px taller the moment you
+   dealt and 26px shorter when the hand ended — two jumps per hand. */
+.action-row-fixed {
+  display: flex;
+  gap: 8px;
+  padding: 40px 16px 14px
+}
+
+/* min-width:0 is what keeps the three equal. Without it a flex item refuses to
+   shrink below its min-content width, so a longer label steals room from its
+   neighbours and the whole row jumps. */
+/* position + z-index so the buttons paint over the tabs tucked under them:
+   an absolutely positioned tab would otherwise sit on top of a static button. */
+.action-row-fixed button {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  position: relative;
+  z-index: 1
+}
+
+/* A live hand reserves a strip above the buttons for the amount tabs, whether
+   or not one is showing. Reserving it costs 26px of dock and buys a row that
+   never moves as tabs come and go. */
+
+/* The slider stays out of sight until a raise is actually being sized. */
+.raise-tray {
+  display: none;
+  padding: 12px 16px 0
+}
+
+.action-dock[data-phase=live][data-raise=open] .raise-tray {
+  display: block
+}
+
+.raise-tray .raise-row {
+  margin-top: 0
+}
+
+/* Amount tabs: anchored to the top edge of their own button and exactly as wide
+   as it (three buttons, two 8px gaps), square along the bottom so tab and
+   button read as one piece with the figure growing out of the button. */
+.phase-live {
+  position: relative
+}
+
+/* The tab drops 6px past the top of the button -- the button's own corner
+   radius -- and sits behind it. Ending flush at the button's top edge left a
+   wedge of dock showing on each side where the corners curve away; running the
+   tab under the button fills those wedges without touching the radius. The
+   same 6px goes on padding-bottom, so the figure itself does not move. */
+.amt-tab {
+  display: none;
+  position: absolute;
+  bottom: calc(100% - 6px);
+  z-index: 0;
+  width: calc((100% - 16px) / 3);
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--brass);
+  background: #3C3A37;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  padding: 4px 0 11px
+}
+
+/* Second of three: one button width plus one gap from the left. */
+.amt-call {
+  left: calc((100% - 16px) / 3 + 8px)
+}
+
+.amt-raise {
+  right: 0
+}
+
+.action-dock[data-call=on] .amt-call,
+.action-dock[data-raise=open] .amt-raise {
+  display: block
+}
+
+.card-box {
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px
+}
+
+.card-box.hot {
+  border-color: #5A2E24;
+  box-shadow: 0 0 0 1px rgba(210, 112, 92, .4)
+}
+
+.box-label {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin-bottom: 10px
+}
+
+.status {
+  font-size: 13px;
+  color: var(--cream-dim);
+  min-height: 38px;
+  margin-bottom: 11px
+}
+
+.status b {
+  color: var(--brass)
+}
+
+/* Kept in the DOM only because the engine writes to #status on every action. */
+.status-hidden {
+  display: none
+}
+
+/* One block, two faces. The engine sets data-view on #actionBox; whichever
+   face is off duty is display:none, never unmounted, so #log and #handResult
+   are always there for the engine to write into. */
+#actionBox[data-view=result] .log-scroll,
+#actionBox[data-view=moves] .hand-result {
+  display: none
+}
+
+.hand-result {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  text-align: center
+}
+
+.result-figure {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums
+}
+
+.result-figure.pos {
+  color: var(--win)
+}
+
+.result-figure.neg {
+  color: var(--blood)
+}
+
+.result-figure.flat {
+  color: var(--cream-dim)
+}
+
+.result-sub {
+  font-size: 10px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--slate)
+}
+
+.result-pots {
+  list-style: none;
+  margin-top: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  color: var(--cream-dim)
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap
+}
+
+button {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #4A4846;
+  padding: 11px 18px;
+  cursor: pointer;
+  transition: background .16s, transform .08s, border-color .16s;
+  color: var(--cream);
+  background: #3C3A37
+}
+
+button:hover:not(:disabled) {
+  background: #46443F;
+  transform: translateY(-1px)
+}
+
+button:active:not(:disabled) {
+  transform: none
+}
+
+button:disabled {
+  opacity: .3;
+  cursor: not-allowed
+}
+
+button:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px
+}
+
+.btn-fold,
+.btn-call,
+.btn-raise {
+  background: #55534F;
+  border-color: #6B6965;
+  color: var(--cream);
+  flex: 1
+}
+
+.btn-fold:hover:not(:disabled),
+.btn-call:hover:not(:disabled),
+.btn-raise:hover:not(:disabled) {
+  background: #605E59
+}
+
+/* The one green "go" action: Deal hand before the session, New hand after a
+   hand. Same colour, same corner, whichever phase you are in. */
+.btn-primary {
+  background: var(--felt);
+  border-color: var(--felt);
+  color: #17211E;
+  font-weight: 700
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--felt-lo);
+  border-color: var(--felt-lo)
+}
+
+.btn-review {
+  background: #3C3A37;
+  border-color: #4A4846;
+  color: var(--cream-dim)
+}
+
+.btn-review:hover:not(:disabled) {
+  background: #46443F;
+  color: var(--cream)
+}
+
+.raise-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 11px
+}
+
+input[type=range] {
+  flex: 1;
+  min-width: 110px;
+  accent-color: var(--brass)
+}
+
+.preset-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px
+}
+
+.preset {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: #3C3A37;
+  border: 1px solid #4A4846;
+  color: var(--cream-dim);
+  cursor: pointer;
+  font-weight: 400
+}
+
+.preset:hover {
+  background: #46443F;
+  color: var(--cream);
+  transform: none
+}
+
+.guess-q {
+  font-size: 13px;
+  color: var(--cream-dim);
+  margin-bottom: 11px;
+  line-height: 1.5
+}
+
+.guess-q b {
+  color: #D64F4F
+}
+
+.guess-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 6px;
+  font-size: 13px;
+  padding: 10px 12px
+}
+
+.guess-skip {
+  width: 100%;
+  background: transparent;
+  font-size: 12px;
+  color: var(--slate);
+  padding: 8px
+}
+
+.guess-result {
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  display: block
+}
+
+.guess-result.right {
+  color: #9BCB69
+}
+
+.guess-result.wrong {
+  color: #D64F4F
+}
+
+/* The bubble holds a question and nothing else. Everything the coach concludes
+   is rendered in the hand review instead — see .review-streets. */
+/* Three lines held open whatever the coach says. A one-line nudge followed by
+   a three-line one swung the bubble 40px and shoved the panel down with it. */
+.coach-nudge {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--cream);
+  min-height: 63px
+}
+
+.coach-nudge b {
+  color: var(--brass);
+  font-weight: 700
+}
+
+.equity-figure {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.02em
+}
+
+.equity-figure span {
+  font-size: 16px;
+  color: var(--slate);
+  font-weight: 600
+}
+
+.eq-sub {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--slate);
+  margin-top: 5px;
+  line-height: 1.6
+}
+
+.eq-sub b {
+  color: var(--cream-dim)
+}
+
+.equity-hand {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--brass);
+  margin-top: 3px;
+  min-height: 20px
+}
+
+.meter {
+  display: flex;
+  height: 9px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #1D1C1A;
+  margin-top: 11px;
+  border: 1px solid var(--line)
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  transition: width .5s ease
+}
+
+.m-win {
+  background: linear-gradient(90deg, #5D8E38, #9BCB69)
+}
+
+.m-tie {
+  background: var(--tie)
+}
+
+.m-lose {
+  background: #6E2B1F
+}
+
+.meter-key {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  color: var(--slate);
+  margin-top: 6px
+}
+
+.odds-note {
+  font-size: 12px;
+  color: var(--cream-dim);
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  line-height: 1.5
+}
+
+.odds-note b {
+  color: var(--cream);
+  font-family: 'Inter', system-ui, sans-serif
+}
+
+.verdict {
+  font-weight: 600
+}
+
+.verdict.good {
+  color: var(--win)
+}
+
+.verdict.bad {
+  color: #D64F4F
+}
+
+.rangebar {
+  margin-top: 9px
+}
+
+.rangebar .rb-lab {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  color: var(--slate);
+  margin-bottom: 3px
+}
+
+.rb-track {
+  position: relative;
+  height: 11px;
+  border-radius: 4px;
+  background: #1D1C1A;
+  border: 1px solid var(--line);
+  overflow: hidden
+}
+
+.rb-val {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, rgba(129, 182, 76, .35), var(--brass))
+}
+
+.rb-bluff {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: repeating-linear-gradient(45deg, #6E2B1F 0 3px, #8A3626 3px 6px)
+}
+
+.setup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px
+}
+
+.setup-row label {
+  font-size: 12px;
+  color: var(--cream-dim);
+  width: 74px;
+  flex: none
+}
+
+select {
+  flex: 1;
+  background: #3C3A37;
+  color: var(--cream);
+  border: 1px solid #4A4846;
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px
+}
+
+select:focus-visible {
+  outline: 2px solid var(--brass)
+}
+
+.speed-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px
+}
+
+.speed-btn {
+  flex: 1;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  padding: 7px 4px;
+  border-radius: 7px;
+  background: #3C3A37;
+  border: 1px solid #4A4846;
+  color: var(--cream-dim);
+  font-weight: 400
+}
+
+.speed-btn.on {
+  background: #46443F;
+  color: var(--brass);
+  border-color: var(--brass)
+}
+
+.mini-note {
+  font-size: 11px;
+  color: #55635F;
+  line-height: 1.5;
+  margin-top: 9px
+}
+
+details {
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden
+}
+
+summary {
+  padding: 13px 14px;
+  cursor: pointer;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--slate);
+  list-style: none
+}
+
+summary::-webkit-details-marker {
+  display: none
+}
+
+summary::after {
+  content: "+";
+  float: right;
+  font-size: 13px
+}
+
+details[open] summary::after {
+  content: "–"
+}
+
+summary:hover {
+  color: var(--cream-dim)
+}
+
+.details-body {
+  padding: 0 14px 14px
+}
+
+/* The move list scrolls on this wrapper rather than on the table, so the rows
+   can run the full width of the side panel: the negative margins cancel its
+   16px padding, the same way .win-bar does. */
+/* min-height: 0 so this can be shorter than its content and actually scroll —
+   the 168px floor on #actionBox is what guarantees it a usable window. The
+   engine pins scrollTop to the bottom on every append, so the newest move is
+   never a scroll away and older ones ride up out of the way. */
+/* Rows fill from the top. Once they reach the bottom of this window the engine
+   pins scrollTop to the bottom on every append (see pinLog), so the newest move
+   holds the last line and the earlier ones scroll up out of view. Plain block
+   flow, not a flex column: the rows must start at the top, and the pin is what
+   handles the overflow case. */
+.log-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -16px
+}
+
+/* Three columns and no rules between them — the number and name columns shrink
+   to their content, so giving the action column all the width is what pins the
+   other two to the left. Plain sans rather than mono: only the figures need to
+   line up, and tabular-nums does that without making the words look like code. */
+/* table-layout:fixed is load-bearing, not tidiness. Under the default auto
+   layout the browser re-measures every column each time a row lands, so the
+   moment "Marguerite" arrives the name column widens and every row already on
+   screen shifts sideways. Fixed takes the widths below as given and never
+   re-measures, so the columns hold still while the hand plays. */
+.log {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  color: var(--cream-dim)
+}
+
+.log td {
+  padding: 5px 8px;
+  vertical-align: baseline
+}
+
+.log td:first-child {
+  padding-left: 16px
+}
+
+.log td:last-child {
+  padding-right: 16px
+}
+
+/* Sized for the worst case rather than the current contents: three digits of
+   move number, and "Marguerite" — the longest name in SEAT_NAMES — at the bold
+   weight the newest row uses, plus each cell's 16px of padding. The action
+   column takes whatever is left. */
+.log-no {
+  width: 50px;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--slate)
+}
+
+.log-who {
+  width: 104px;
+  white-space: nowrap;
+  color: var(--cream)
+}
+
+.log-act {
+  width: auto
+}
+
+.log tr:nth-child(odd) {
+  background: rgba(255, 255, 255, .03)
+}
+
+.log .hl {
+  color: var(--brass)
+}
+
+/* Each hand and street gets a band across the whole panel, so the list reads as
+   hands rather than one long run of rows. Written as tr.street, not .street:
+   .log tr:nth-child(odd) above scores a type plus two classes, so a plainer
+   selector would lose the background fight on every odd row. */
+.log tr.street {
+  color: var(--cream);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--dark-ink);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line)
+}
+
+.log tr.street td {
+  padding-top: 7px;
+  padding-bottom: 7px
+}
+
+.log tr.street:first-child {
+  border-top: 0
+}
+
+/* Recency, read off position rather than off any engine flag: the last row is
+   whatever just happened — the live move — so it takes the band and the bar;
+   the one before it stays bold and fades out from there. These have to sit
+   after the zebra and .street rules, since all of them score the same
+   specificity and source order is what decides the winner. The bar goes on the
+   first cell, not the row: a tr in a collapsed-border table is not a reliable
+   box-shadow host. */
+.log tr:last-child:not(.log-empty) {
+  background: rgba(233, 233, 232, .13);
+  color: var(--cream);
+  font-weight: 700
+}
+
+.log tr:last-child:not(.log-empty) td:first-child {
+  box-shadow: inset 3px 0 0 var(--cream-dim)
+}
+
+.log tr:nth-last-child(2):not(.street) {
+  color: var(--cream);
+  font-weight: 600
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px
+}
+
+.stat {
+  background: #3C3A37;
+  border: 1px solid #4A4846;
+  border-radius: 6px;
+  padding: 9px 10px
+}
+
+.stat .k {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--slate)
+}
+
+.stat .v {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--cream);
+  margin-top: 2px
+}
+
+.stat .v small {
+  font-size: 10px;
+  color: var(--slate);
+  font-weight: 400
+}
+
+.classify {
+  margin-top: 11px
+}
+
+.classify-out {
+  display: none;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--cream-dim);
+  line-height: 1.55
+}
+
+.classify-out.open {
+  display: block
+}
+
+.classify-out .big {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--brass);
+  display: block;
+  margin-bottom: 4px
+}
+
+.footnote {
+  margin-top: 14px;
+  font-size: 11px;
+  color: #55635F;
+  line-height: 1.6;
+  border-top: 1px solid #1B2A26;
+  padding-top: 11px
+}
+
+.log-wrap {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px
+}
+
+.fe-tab {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  margin-top: 8px
+}
+
+.fe-tab th {
+  text-align: left;
+  color: var(--slate);
+  font-weight: 400;
+  font-size: 9px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  padding: 0 0 4px
+}
+
+.fe-tab td {
+  padding: 3px 0;
+  border-top: 1px solid #1B2A26;
+  color: var(--cream-dim)
+}
+
+.fe-tab td:first-child {
+  color: var(--cream)
+}
+
+.fe-good {
+  color: var(--win);
+  font-weight: 700
+}
+
+.fe-bad {
+  color: #D64F4F
+}
+
+.rg-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 7px
+}
+
+.rg-btn {
+  flex: 1 1 40%;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  padding: 7px 4px;
+  border-radius: 7px;
+  background: #3C3A37;
+  border: 1px solid #4A4846;
+  color: var(--cream-dim);
+  font-weight: 400
+}
+
+.rg-btn:hover {
+  background: #46443F;
+  transform: none
+}
+
+.rg-out {
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin-top: 8px;
+  color: var(--cream-dim)
+}
+
+.rg-out b {
+  color: var(--brass);
+  font-family: 'Inter', system-ui, sans-serif
+}
+
+.image-line {
+  font-size: 12px;
+  color: var(--cream-dim);
+  line-height: 1.5
+}
+
+.image-line b {
+  color: var(--brass);
+  font-family: 'Inter', system-ui, sans-serif
+}
+
+.drift {
+  display: none;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #E0B36A;
+  background: #241C0E;
+  border: 1px solid #4A3A16;
+  border-radius: 6px;
+  padding: 9px 11px;
+  margin-bottom: 11px
+}
+
+.drift.on {
+  display: block
+}
+
+.cf-line {
+  font-size: 12px;
+  color: var(--cream-dim);
+  line-height: 1.6;
+  margin-top: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line)
+}
+
+.cf-line b {
+  color: var(--cream);
+  font-family: 'Inter', system-ui, sans-serif
+}
+
+.cf-win {
+  color: var(--win);
+  font-weight: 600
+}
+
+.cf-lose {
+  color: #D64F4F;
+  font-weight: 600
+}
+
+.fb-field {
+  margin-bottom: 9px
+}
+
+.fb-field label {
+  display: block;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin-bottom: 4px
+}
+
+.fb-field input,
+.fb-field textarea,
+.fb-field select {
+  width: 100%;
+  background: #3C3A37;
+  color: var(--cream);
+  border: 1px solid #4A4846;
+  border-radius: 7px;
+  padding: 8px 9px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px
+}
+
+.fb-field textarea {
+  min-height: 78px;
+  resize: vertical
+}
+
+.fb-field input:focus-visible,
+.fb-field textarea:focus-visible,
+.fb-field select:focus-visible {
+  outline: 2px solid var(--brass)
+}
+
+.fb-hp {
+  position: absolute;
+  left: -9999px
+}
+
+.fb-msg {
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 9px;
+  display: none
+}
+
+.fb-msg.on {
+  display: block
+}
+
+.fb-msg.ok {
+  color: #9BCB69
+}
+
+.fb-msg.err {
+  color: #E0B36A
+}
+
+.build-tag {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  color: #3E4B47;
+  margin-top: 10px
+}
+
+.ct-wrap {
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line)
+}
+
+.ct-head {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--brass);
+  margin-bottom: 6px
+}
+
+.ct-list {
+  margin: 0;
+  padding-left: 16px
+}
+
+.ct-list li {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--cream-dim);
+  margin-bottom: 4px
+}
+
+.ct-toggle {
+  width: 100%;
+  background: transparent;
+  border-color: #4A4846;
+  font-size: 12px;
+  color: var(--cream-dim);
+  margin-top: 9px;
+  padding: 8px
+}
+
+.val-box {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line)
+}
+
+.val-head {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin-bottom: 7px
+}
+
+.val-tab {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px
+}
+
+.val-tab th {
+  text-align: left;
+  color: var(--slate);
+  font-weight: 400;
+  font-size: 9px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  padding: 0 0 4px
+}
+
+.val-tab td {
+  padding: 3px 0;
+  border-top: 1px solid #1B2A26;
+  color: var(--cream-dim)
+}
+
+.val-tab tr.peak td {
+  color: var(--brass);
+  font-weight: 700
+}
+
+.val-bar {
+  display: inline-block;
+  height: 7px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(129, 182, 76, .4), var(--brass));
+  vertical-align: middle
+}
+
+.val-note {
+  font-size: 11.5px;
+  color: var(--cream-dim);
+  line-height: 1.5;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line)
+}
+
+.val-note b {
+  color: var(--brass)
+}
+
+.ev-box {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line)
+}
+
+.ev-line {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--cream-dim);
+  margin-bottom: 4px
+}
+
+.ev-line b {
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--cream)
+}
+
+.ev-pos {
+  color: var(--win);
+  font-weight: 700
+}
+
+.fq-tied {
+  font-size: 10px;
+  color: #55635F;
+  letter-spacing: .02em
+}
+
+.ev-neg {
+  color: #D64F4F;
+  font-weight: 700
+}
+
+.ev-miss {
+  background: #241C0E;
+  border: 1px solid #4A3A16;
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #E0B36A;
+  margin-top: 9px
+}
+
+.ev-good {
+  background: #1E2E17;
+  border: 1px solid #3E5E28;
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #9BCB69;
+  margin-top: 9px
+}
+
+.leak {
+  background: #241C0E;
+  border: 1px solid #4A3A16;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #E0B36A;
+  margin-bottom: 11px;
+  display: none
+}
+
+.leak.on {
+  display: block
+}
+
+.leak b {
+  color: #F0CE8E
+}
+
+.spark-wrap {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line)
+}
+
+.spark-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin-bottom: 6px
+}
+
+.spark-head span:last-child {
+  color: var(--cream-dim);
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 10px
+}
+
+svg.spark {
+  width: 100%;
+  height: 52px;
+  display: block;
+  overflow: visible
+}
+
+.ev-tot {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1
+}
+
+.ev-tot small {
+  font-size: 10px;
+  color: var(--slate);
+  font-weight: 400;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  display: block;
+  margin-top: 2px
+}
+
+.reset-btn {
+  width: 100%;
+  margin-top: 10px;
+  background: transparent;
+  border-color: #3A2A22;
+  color: #9A8478;
+  font-size: 12px;
+  padding: 8px
+}
+
+.reset-btn:hover {
+  background: #2B1A17;
+  color: #D64F4F
+}
+
+@media (prefers-reduced-motion:reduce) {
+  * {
+    animation: none !important;
+    transition: none !important
+  }
+}
+
+@media (max-width:620px) {
+  .table-outer {
+    aspect-ratio: auto;
+    height: 560px;
+    padding: 10px
+  }
+
+  .seat {
+    width: 100px
+  }
+
+  .card {
+    width: 34px;
+    height: 48px
+  }
+
+  .card .rank {
+    font-size: 12px
+  }
+
+  .card .pip {
+    font-size: 14px
+  }
+}
 
 /* ---- coach panel (Tasks 4–6) ---- */
-.coach-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:6px}
-.coach-verdict{font-family:'Fraunces',Georgia,serif;font-size:15.5px;font-weight:600;line-height:1.4;color:var(--brass);flex:1;min-width:0}
-.coach-verdict b{color:var(--cream)}
-.coach-conf{font-size:9px;letter-spacing:.13em;text-transform:uppercase;padding:2px 7px;border-radius:99px;white-space:nowrap;border:1px solid currentColor;opacity:.85}
-.conf-clear{color:var(--win)}
-.conf-solid{color:#7FA8CB}
-.conf-marginal{color:#E0B36A}
-.conf-tossup{color:#B89AC7}
-.coach-reason{font-size:13px;line-height:1.6;color:var(--cream);margin-bottom:8px}
-.coach-reason b{font-family:'JetBrains Mono',monospace;color:var(--brass)}
-.coach-points{list-style:none;margin:0 0 4px;padding:0;display:flex;flex-direction:column;gap:4px}
-.coach-points li{font-size:11.5px;line-height:1.5;color:var(--cream-dim);padding-left:13px;position:relative}
-.coach-points li:before{content:'';position:absolute;left:3px;top:7px;width:3px;height:3px;border-radius:50%;background:var(--brass);opacity:.7}
-.coach-lines p{font-size:12.5px;line-height:1.6;color:var(--cream-dim);margin-bottom:7px}
-.coach-lines p:last-child{margin-bottom:0}
-.coach-lines b{color:var(--cream);font-family:'JetBrains Mono',monospace}
-.eq-duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
-.eq-cap{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--slate);line-height:1.5}
-.eq-cap small{display:block;font-size:8.5px;color:#55635F;letter-spacing:.06em}
-.eq-col .equity-figure{font-size:25px;margin-top:3px}
-.eq-col .equity-figure span{font-size:11px}
-.eq-bar{height:7px;border-radius:999px;background:#0A1512;border:1px solid var(--line);overflow:hidden;margin-top:6px}
-.eq-bar i{display:block;height:100%;background:linear-gradient(90deg,rgba(124,140,136,.5),var(--slate));transition:width .5s ease}
-.eq-bar i.adj{background:linear-gradient(90deg,#2E9E7B,#48C39B)}
-.coach-disc{background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;margin-top:10px}
-.coach-disc summary{padding:9px 0 0;font-size:9px;letter-spacing:.13em}
-.coach-disc-body{padding:8px 0 2px}
-.coach-disc-body p{font-size:11.5px;line-height:1.6;color:var(--cream-dim);margin-bottom:6px}
-.coach-disc-body b{color:var(--brass);font-family:'JetBrains Mono',monospace}
-.coach-maths-line{font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.65;color:var(--cream-dim);padding:3px 0;border-top:1px solid #1B2A26}
-.coach-maths-line:first-child{border-top:0}
-.review-verdict{font-family:'Fraunces',Georgia,serif;font-size:14.5px;font-weight:600;line-height:1.4;margin-bottom:8px}
-.review-verdict.good{color:var(--win)}
-.review-verdict.warn{color:#E0B36A}
-.ev-good p,.ev-miss p{margin-bottom:6px}
-.ev-good p:last-child,.ev-miss p:last-child{margin-bottom:0}
-.ev-good b,.ev-miss b{font-family:'JetBrains Mono',monospace}
+.coach-card {
+  padding: 0 0 16px 0
+}
+
+.coach-chat {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px
+}
+
+.coach-avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: #132B0A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+}
+
+.coach-bubble {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: #3C3A37;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 13px
+}
+
+.coach-bubble::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 14px;
+  width: 12px;
+  height: 12px;
+  background: #3C3A37;
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: rotate(45deg)
+}
+
+.coach-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 6px
+}
+
+.coach-verdict {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--brass);
+  flex: 1;
+  min-width: 0
+}
+
+.coach-verdict b {
+  color: var(--cream)
+}
+
+.coach-conf {
+  font-size: 9px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 99px;
+  white-space: nowrap;
+  border: 1px solid currentColor;
+  opacity: .85
+}
+
+.conf-clear {
+  color: var(--win)
+}
+
+.conf-solid {
+  color: #7FA8CB
+}
+
+.conf-marginal {
+  color: #E0B36A
+}
+
+.conf-tossup {
+  color: #B89AC7
+}
+
+.coach-reason {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--cream);
+  margin-bottom: 8px
+}
+
+.coach-reason b {
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--brass)
+}
+
+.coach-points {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px
+}
+
+.coach-points li {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--cream-dim);
+  padding-left: 13px;
+  position: relative
+}
+
+.coach-points li:before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 7px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--brass);
+  opacity: .7
+}
+
+.coach-lines p {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--cream-dim);
+  margin-bottom: 7px
+}
+
+.coach-lines p:last-child {
+  margin-bottom: 0
+}
+
+.coach-lines b {
+  color: var(--cream);
+  font-family: 'Inter', system-ui, sans-serif
+}
+
+.eq-duo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line)
+}
+
+.eq-cap {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 9px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--slate);
+  line-height: 1.5
+}
+
+.eq-cap small {
+  display: block;
+  font-size: 8.5px;
+  color: #55635F;
+  letter-spacing: .06em
+}
+
+.eq-col .equity-figure {
+  font-size: 25px;
+  margin-top: 3px
+}
+
+.eq-col .equity-figure span {
+  font-size: 11px
+}
+
+.eq-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: #1D1C1A;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  margin-top: 6px
+}
+
+.eq-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(124, 140, 136, .5), var(--slate));
+  transition: width .5s ease
+}
+
+.eq-bar i.adj {
+  background: linear-gradient(90deg, #5D8E38, #9BCB69)
+}
+
+.coach-disc {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  margin-top: 10px
+}
+
+.coach-disc summary {
+  padding: 9px 0 0;
+  font-size: 9px;
+  letter-spacing: .13em
+}
+
+.coach-disc-body {
+  padding: 8px 0 2px
+}
+
+.coach-disc-body p {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--cream-dim);
+  margin-bottom: 6px
+}
+
+.coach-disc-body b {
+  color: var(--brass);
+  font-family: 'Inter', system-ui, sans-serif
+}
+
+.coach-maths-line {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10.5px;
+  line-height: 1.65;
+  color: var(--cream-dim);
+  padding: 3px 0;
+  border-top: 1px solid #1B2A26
+}
+
+.coach-maths-line:first-child {
+  border-top: 0
+}
+
+.review-verdict {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 8px
+}
+
+.review-verdict.good {
+  color: var(--win)
+}
+
+.review-verdict.warn {
+  color: #E0B36A
+}
+
+/* One section per decision — the answers the bubble deliberately withheld. */
+.review-streets {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line)
+}
+
+.review-streets>.coach-disc>summary {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--cream)
+}
+
+/* The nested disclosures sit inside an already-indented body, so they lose the
+   divider the top-level ones use — otherwise every street reads as a stack of
+   rules rather than one block. */
+.review-streets .coach-disc-body .coach-disc {
+  border-top: 0;
+  margin-top: 6px
+}
+
+.ev-good p,
+.ev-miss p {
+  margin-bottom: 6px
+}
+
+.ev-good p:last-child,
+.ev-miss p:last-child {
+  margin-bottom: 0
+}
+
+.ev-good b,
+.ev-miss b {
+  font-family: 'Inter', system-ui, sans-serif
+}
 
 /* ---- glossary ---- */
-.gloss-intro{font-size:12px;line-height:1.55;color:var(--cream-dim);margin-bottom:14px}
-.gloss-group{margin-bottom:16px}
-.gloss-group:last-child{margin-bottom:0}
-.gloss-list{margin:0}
-.gloss-item{padding:7px 0;border-top:1px solid #1B2A26;display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px}
-.gloss-item dt{font-size:12.5px;font-weight:600;color:var(--brass)}
-.gloss-item dd{font-size:12px;line-height:1.55;color:var(--cream-dim);margin:0}
-@media (max-width:620px){.gloss-item{grid-template-columns:minmax(0,1fr);gap:3px}}
+.gloss-intro {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--cream-dim);
+  margin-bottom: 14px
+}
+
+.gloss-group {
+  margin-bottom: 16px
+}
+
+.gloss-group:last-child {
+  margin-bottom: 0
+}
+
+.gloss-list {
+  margin: 0
+}
+
+.gloss-item {
+  padding: 7px 0;
+  border-top: 1px solid #1B2A26;
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 12px
+}
+
+.gloss-item dt {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--brass)
+}
+
+.gloss-item dd {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--cream-dim);
+  margin: 0
+}
+
+@media (max-width:620px) {
+  .gloss-item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px
+  }
+}
+
+/* ---- modal shell: shared by settings and the hand review ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px
+}
+
+.modal-overlay.open {
+  display: flex
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 12, 10, .72);
+  backdrop-filter: blur(2px)
+}
+
+.modal-panel {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  box-shadow: var(--shadow-standard)
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px
+}
+
+.modal-head .box-label {
+  margin-bottom: 0
+}
+
+.modal-close {
+  background: transparent;
+  border-color: #4A4846;
+  padding: 4px 10px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--cream-dim)
+}
+
+.modal-close:hover {
+  color: var(--cream);
+  background: #3C3A37
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 13px
+}
+
+.modal-body .masthead {
+  margin-bottom: 0;
+  padding-bottom: 13px
+}
 
 /* ---- equity tab: always on, above Your action ---- */
-.equity-tab .box-label{margin-bottom:12px}
-.eq-main{display:flex;align-items:center;gap:14px}
-.eq-ring{position:relative;width:82px;height:82px;flex:none}
-.eq-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
-.eq-ring circle{fill:none;stroke-width:6;stroke-linecap:round}
-.eq-ring-track{stroke:#16241F}
-.eq-ring-fill{stroke:url(#eqGrad);stroke:var(--win);transition:stroke-dashoffset .6s cubic-bezier(.16,.8,.3,1)}
-.eq-ring-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:23px;font-weight:700;letter-spacing:-.03em;color:var(--cream)}
-.eq-ring-num span{font-size:10px;color:var(--slate);font-weight:600;margin-left:1px;align-self:center}
-.eq-side{min-width:0;flex:1}
-.eq-side-cap{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--win)}
-.eq-side-sub{font-size:10.5px;color:#55635F;line-height:1.4;margin-top:1px}
-.eq-raw{display:flex;align-items:baseline;gap:6px;margin-top:9px;padding-top:8px;border-top:1px solid var(--line)}
-.eq-raw-num{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--cream-dim)}
-.eq-raw-num span{font-size:9px;color:var(--slate)}
-.eq-raw-cap{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--slate);line-height:1.3}
-.eq-raw-cap small{display:block;font-size:8.5px;color:#55635F;letter-spacing:.05em;text-transform:none}
-.equity-tab .equity-hand{margin-top:10px;font-size:14px}
-.equity-tab .meter{margin-top:8px}
+.eq-ring-hidden {
+  display: none
+}
+
+.win-bar {
+  position: relative;
+  display: flex;
+  margin: 10px 5px -16px 0px
+}
+
+.win-bar-hidden {
+  display: none
+}
+
+.win-bar-track {
+  flex: 1;
+  min-height: 0;
+  height: 14px;
+  border-bottom-left-radius: 1px solid var(--line);
+  background: #1D1C1A;
+  overflow: hidden
+}
+
+.win-bar-track .meter {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  display: flex;
+  flex-direction: row
+}
+
+.win-bar-track .m-win {
+  height: 100%;
+  background: var(--win)
+}
+
+.win-bar-track .m-tie,
+.win-bar-track .m-lose {
+  height: 100%;
+  background: transparent
+}
+/* ============================================================
+   HOME — the dashboard
+   ============================================================
+   Both screens are mounted at once (see App.jsx: the engine's nodes cannot be
+   unmounted and rebuilt), so the visible one is chosen here rather than by
+   conditional rendering. */
+.shell[data-screen="home"] .board-grid {
+  display: none
+}
+
+.shell[data-screen="table"] .home-screen,
+.shell[data-screen="history"] .home-screen {
+  display: none
+}
+
+/* ============================================================
+   HISTORY — replaying a hand on the live felt
+
+   History is not a third screen with a table of its own. It shares Play's
+   felt and swaps only the panel beside it, because the engine draws a
+   replayed hand through the same paint() as a live one. A second table would
+   be a second renderer to keep in visual step, and it would lose that
+   agreement the first time either was restyled. */
+.history-panel {
+  display: none
+}
+
+.shell[data-screen="history"] .history-panel {
+  display: flex
+}
+
+.shell[data-screen="history"] .side-panel:not(.history-panel) {
+  display: none
+}
+
+.hist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px
+}
+
+/* A grid, not flex: the columns have to line up down the list or a stack of
+   hands cannot be scanned for the one that cost the most. */
+.hist-row {
+  display: grid;
+  grid-template-columns: 3.2rem 1fr 3.4rem 4.2rem;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--cream);
+  font: inherit;
+  text-align: left;
+  cursor: pointer
+}
+
+.hist-row:hover {
+  background: var(--rail-hi)
+}
+
+.hist-row.is-selected {
+  background: var(--rail-hi);
+  box-shadow: inset 2px 0 0 var(--brass)
+}
+
+.hist-no {
+  font-size: 11px;
+  opacity: .55
+}
+
+.hist-cards {
+  display: inline-flex;
+  gap: 3px
+}
+
+.hist-card {
+  display: inline-block;
+  min-width: 1.5rem;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--cream);
+  color: #111;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center
+}
+
+.hist-card.is-red {
+  color: #c0392b
+}
+
+.hist-none {
+  opacity: .4
+}
+
+.hist-net {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right
+}
+
+.hist-net.up {
+  color: var(--win)
+}
+
+.hist-net.down {
+  color: var(--blood)
+}
+
+.hist-cost {
+  font-size: 11px;
+  text-align: right;
+  color: var(--blood);
+  opacity: .85
+}
+
+.hist-empty,
+.hist-blocked {
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: .7
+}
+
+.hist-blocked {
+  color: var(--blood);
+  opacity: 1
+}
+
+.hist-replay {
+  padding: 9px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: var(--rail-hi)
+}
+
+.hist-replay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px
+}
+
+.hist-exit {
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--brass);
+  color: #111;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer
+}
+
+.hist-caption {
+  min-height: 1.4em;
+  margin-bottom: 7px;
+  font-size: 12px
+}
+
+.hist-buttons {
+  display: flex;
+  align-items: center;
+  gap: 5px
+}
+
+.hist-buttons button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--cream);
+  font: inherit;
+  cursor: pointer
+}
+
+.hist-buttons button:disabled {
+  opacity: .3;
+  cursor: default
+}
+
+.hist-progress {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: .6
+}
+
+.hist-scrub {
+  width: 100%;
+  margin-top: 7px
+}
+
+.hist-decisions {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px
+}
+
+.hist-decisions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+  opacity: .7
+}
+
+.hist-decisions li.is-costly {
+  opacity: 1
+}
+
+/* The rail's active row had no fill of its own. Now that two rows compete for
+   it, the section you're in needs to read at a glance. */
+.rail-btn.is-active {
+  background: var(--rail-hi);
+  color: var(--cream)
+}
+
+.home-screen {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto
+}
+
+/* Capped and centred: a stats grid stretched across a wide monitor stops being
+   readable as a group. */
+.home-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px
+}
+
+.home-head h2 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--cream)
+}
+
+.home-sub {
+  margin-top: 6px;
+  color: var(--cream-dim);
+  font-size: 14px
+}
+
+.home-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px
+}
+
+/* ---- the live game ---- */
+
+/* The one card on this screen that is an invitation rather than a record, so
+   it gets the felt edge and the others stay flat. */
+.home-live {
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--felt);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px
+}
+
+.home-live-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px
+}
+
+.home-live-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--felt)
+}
+
+.home-live-meta {
+  color: var(--cream-dim);
+  font-size: 14px
+}
+
+.home-live-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--slate)
+}
+
+.home-live-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px
+}
+
+.home-live-actions .btn-primary {
+  min-width: 140px
+}
+
+/* Ending a game is destructive enough to want confirming but ordinary enough
+   not to shout, so it sits as text beside the primary. */
+.home-btn-quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--cream-dim);
+  font-size: 14px;
+  font-weight: 600
+}
+
+.home-btn-quiet:hover:not(:disabled) {
+  color: var(--cream);
+  background: var(--rail-hi);
+  transform: none
+}
+
+/* ---- new game ---- */
+.home-new {
+  width: 100%;
+  padding: 14px;
+  background: var(--ink);
+  border: 1px dashed var(--line);
+  color: var(--cream);
+  font-size: 15px;
+  font-weight: 600
+}
+
+.home-new:hover:not(:disabled) {
+  border-color: var(--felt);
+  color: var(--felt)
+}
+
+/* ---- the coach's line ---- */
+.home-leak {
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px
+}
+
+.home-leak-who {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--brass)
+}
+
+.home-leak p {
+  font-size: 14px;
+  color: var(--cream)
+}
+
+/* ---- past games ---- */
+.home-games {
+  list-style: none;
+  display: flex;
+  flex-direction: column
+}
+
+/* Rows separated by a rule rather than gaps, so a long history reads as a
+   ledger instead of a stack of cards. */
+.home-game {
+  display: grid;
+  grid-template-columns: 90px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px
+}
+
+.home-game:last-child {
+  border-bottom: 0
+}
+
+.home-game-date {
+  color: var(--cream);
+  font-weight: 600
+}
+
+.home-game-meta {
+  color: var(--slate)
+}
+
+/* The chip figure carries the result, so it is the only coloured thing in the
+   row. Tabular figures keep the column from jittering between rows. */
+.home-net {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700
+}
+
+.home-net.pos {
+  color: var(--win)
+}
+
+.home-net.neg {
+  color: var(--blood)
+}
+
+.home-net.flat {
+  color: var(--cream-dim)
+}
+
+.home-empty {
+  color: var(--slate);
+  font-size: 14px
+}
+
+/* The rail collapses to icons at this width; the dashboard just needs its
+   padding back. */
+@media (max-width: 920px) {
+  .home-inner {
+    padding: 28px 16px 48px
+  }
+}

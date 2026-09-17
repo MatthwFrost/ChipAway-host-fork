@@ -1,57 +1,54 @@
-// The equity tab sits directly above Your action and is always on, so the two
-// numbers become familiar furniture rather than something you go looking for.
-// The ring fills with range-adjusted equity — the figure that should drive the
-// decision — with raw equity beside it, smaller, as the baseline it moved from.
+// Win chance is a single glanceable bar, nothing else — no number, no detail
+// toggle. The fill is the whole story. The engine still computes and writes
+// the fuller numbers (raw equity, hand name, reliability); those elements
+// stay in the DOM so it never errors, just hidden — nothing here removes
+// that data, it's just not on stage.
 const RING_R = 32;
 const RING_C = 2 * Math.PI * RING_R;
 
 export function EquityPanel() {
   return (
-    <section className="card-box equity-tab" aria-labelledby="equityTabLabel">
-      <div className="box-label" id="equityTabLabel">Your equity</div>
-      <div className="eq-main">
-        <div className="eq-ring">
-          <svg viewBox="0 0 76 76" aria-hidden="true">
-            <circle className="eq-ring-track" cx="38" cy="38" r={RING_R} />
-            <circle
-              className="eq-ring-fill"
-              id="eqRing"
-              cx="38"
-              cy="38"
-              r={RING_R}
-              strokeDasharray={RING_C}
-              strokeDashoffset={RING_C}
-            />
-          </svg>
-          <div className="eq-ring-num" id="eqAdjNum">—<span>%</span></div>
+    <div className="panel-block" aria-labelledby="equityLabel">
+      <div className="panel-head">
+        <div className="box-label" id="equityLabel">Equity</div>
+        <div className="panel-head-actions">
+          <button
+            type="button"
+            className="panel-head-btn"
+            aria-label="Equity information"
+            title="Equity information"
+          >
+            ⓘ
+          </button>
         </div>
-        <div className="eq-side">
-          <div className="eq-side-cap">Range-adjusted</div>
-          <div className="eq-side-sub">vs the hands they can actually have</div>
-          <div className="eq-raw">
-            <span className="eq-raw-num" id="eqRawNum">—<span>%</span></span>
-            <span className="eq-raw-cap">raw<small>vs a random hand</small></span>
+      </div>
+      <div className="win-bar" aria-label="Win chance">
+        <svg className="eq-ring-hidden" viewBox="0 0 76 76" aria-hidden="true" focusable="false">
+          <circle
+            className="eq-ring-fill"
+            id="eqRing"
+            cx="38"
+            cy="38"
+            r={RING_R}
+            strokeDasharray={RING_C}
+            strokeDashoffset={RING_C}
+          />
+        </svg>
+        <div className="win-bar-track">
+          <div className="meter" aria-hidden="true">
+            <i className="m-win" id="mWin" style={{ width: '0%' }} />
+            <i className="m-tie" id="mTie" style={{ width: '0%' }} />
+            <i className="m-lose" id="mLose" style={{ width: '100%' }} />
           </div>
         </div>
-      </div>
-      <div className="equity-hand" id="eqHand" />
-      <div className="meter" aria-hidden="true">
-        <i className="m-win" id="mWin" style={{ width: '0%' }} />
-        <i className="m-tie" id="mTie" style={{ width: '0%' }} />
-        <i className="m-lose" id="mLose" style={{ width: '100%' }} />
-      </div>
-      <div className="meter-key"><span id="kWin">win —</span><span id="kTie">tie —</span><span id="kLose">lose —</span></div>
-      <details className="coach-disc">
-        <summary>How reliable is this?</summary>
-        <div className="coach-disc-body">
-          <p>
-            This number comes from dealing the rest of the hand out thousands of times and counting how
-            often you end up winning. Play it out more times and the figure settles down, but it never
-            lands on one exact number — so treat a couple of points either way as the same answer.
-          </p>
+        <div className="win-bar-hidden" aria-hidden="true">
+          <span id="eqAdjNum">—<span>%</span></span>
+          <span id="eqRawNum">—<span>%</span></span>
+          <div id="eqHand" />
+          <span id="kWin">win —</span><span id="kTie">tie —</span><span id="kLose">lose —</span>
           <div id="eqReliabilityBody" />
         </div>
-      </details>
-    </section>
+      </div>
+    </div>
   );
 }

@@ -17,10 +17,9 @@ export function SessionPanels() {
         </div>
       </details>
 
-      <details>
-        <summary>Hand log</summary>
-        <div className="details-body"><div className="log" id="log"><div>No hands played yet.</div></div></div>
-      </details>
+      {/* The hand log used to live here. It is now the "Game moves" list in the
+          side panel (see ActionPanel) — #log must stay a single element, since
+          the engine appends every move to it by id. */}
 
       <GlossaryPanel />
 

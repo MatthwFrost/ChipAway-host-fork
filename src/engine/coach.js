@@ -556,6 +556,120 @@ export function adviceFromModel(model) {
   };
 }
 
+/* ---- quips: what fills the bubble when there is no question to ask ---- */
+
+// An empty bubble reads as the coach having got up and left the table, so it is
+// never empty. These are small talk and nothing else: they carry no read, no
+// number and — like the nudge — never name an action. A quip that tells you
+// what to do is a quip that has quietly become an answer key.
+//
+// Indexed by hand number rather than drawn at random, so the line is stable for
+// the whole hand. A quip that re-rolled on every bot action would flicker.
+const QUIPS = {
+  idle: [
+    'Shuffle up. Let us see what they give you.',
+    'New hand, clean slate. Nothing that happened before counts.',
+    'Take your seat. I will be watching, not talking.',
+    'Cards in a moment. Watch who is sitting where.',
+    'Ready when the deck is.',
+    'Deep breath. The table has no memory, so neither should you.',
+  ],
+  locked: [
+    'Chips are already out there. Nothing to do but watch.',
+    'Out of your hands now — enjoy the runout.',
+    'That decision is made. Let the cards catch up.',
+    'Nothing left to weigh. Sit back.',
+  ],
+};
+
+// What the coach says straight after hero acts. Being handed generic small talk
+// the moment you play a move reads as not being listened to, so the bubble
+// answers the move instead.
+//
+// These may name the action — it has already been played, so there is nothing
+// left to give away. They must never GRADE it: whether the move was right is
+// the review's job, and a "nice call" here both pre-empts the review and passes
+// judgement before the runout is known.
+const REACTIONS = {
+  fold: [
+    'Out of the way. Nothing more to pay here.',
+    'Down they go. Let us see what you would have run into.',
+    'Away it goes. Watch how the rest of it plays out.',
+  ],
+  check: [
+    'Passed along. The move is theirs now.',
+    'Nothing in. Let us see who wants it.',
+    'Over to them, for free.',
+  ],
+  call: [
+    'In you come. Now we find out.',
+    'Matched. You have bought a look at the next card.',
+    'Along for the ride. Watch what they do next.',
+  ],
+  aggro: [
+    'Money in. Let us see who believes you.',
+    'That will make somebody think.',
+    'Pressure applied. Their turn to squirm.',
+  ],
+};
+
+export function coachReaction(kind, n) {
+  const fam = (kind === 'bet' || kind === 'raise') ? 'aggro' : kind;
+  const list = REACTIONS[fam] || REACTIONS.aggro;
+  const i = Number.isFinite(n) ? Math.abs(Math.trunc(n)) % list.length : 0;
+  return list[i];
+}
+
+export function coachQuip(kind, n) {
+  const list = QUIPS[kind] || QUIPS.idle;
+  // A hand counter should never be negative or NaN, but a bubble that throws is
+  // worse than a bubble that repeats itself.
+  const i = Number.isFinite(n) ? Math.abs(Math.trunc(n)) % list.length : 0;
+  return list[i];
+}
+
+/* ---- the nudge: what the bubble says while the hand is still live ---- */
+
+// The bubble prompts and the review answers. A nudge is built from the same
+// model the advice is, so the two can never describe different spots, but it is
+// bound by one rule the advice is not: it must never name the action, or the
+// player reads the answer off the screen instead of off the table.
+//
+// Every branch phrases itself around what is observable — the price, the seat,
+// the board — and stops at the question mark.
+function nudgeFromModel(model, seed) {
+  // A spot with no options is a spot with no decision. Asking a question here
+  // would be theatre, and a coach that asks hollow questions gets tuned out.
+  if (!model.options.length) return coachQuip('locked', seed);
+
+  const C = model.price.toCall;
+  if (C > 0) {
+    return 'It costs you ' + b(chips(C)) + ' to stay in, and the pot would pay back ' +
+      b(chips(model.price.potIfCall)) + ' — so you need ' + b(model.price.requiredPct + '%') +
+      ' just to break even. Do you have that against the range they are repping?';
+  }
+
+  const pos = model.position;
+  const preflop = model.streetName === 'Preflop' || !!(pos && pos.preflop);
+  if (preflop) {
+    if (pos && pos.name) {
+      return 'You are in the ' + b(pos.name) + ', and you will ' +
+        (pos.actsLast
+          ? 'act last on every street after this one'
+          : 'be first to act for the rest of the hand') +
+        '. Is this a hand worth playing from there?';
+    }
+    return 'Nothing has been put in front of you yet. Is this hand strong enough to open the pot from where you are sitting?';
+  }
+
+  return 'Nobody has put money in yet. Does this board favour the range you are repping, or theirs?';
+}
+
+// `seed` is the hand number, used only to pick which quip fills a silence.
+export function buildCoachNudge(spot, seed) {
+  return nudgeFromModel(buildSpotModel(spot), seed);
+}
+
 /* ---- post-hand review: was the decision right, separately from what happened ---- */
 
 // What kind of miss was it? A flat chip threshold treats "bet a third of the pot

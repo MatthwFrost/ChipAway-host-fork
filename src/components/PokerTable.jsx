@@ -14,9 +14,22 @@ export function PokerTable() {
           </div>
         </div>
       </section>
-      <p className="footnote">
-        Opponents open by position from a percentile chart, then their range narrows by how much they bet and splits into value and bluff portions when they bet big. Your own cards block combos out of their range. Decisions are mixed, not fixed thresholds — the same spot won&apos;t always play the same way.
-      </p>
+      <div className="table-player-bar" role="region" aria-label="Player profile and match results">
+        <div className="table-player-avatar" aria-hidden="true">M</div>
+        <div className="table-player-copy">
+          <div className="table-player-name">Matty Frost <span aria-label="United Kingdom">🇬🇧</span></div>
+          {/* Chips won or lost across the whole session, counted from the
+              starting stack. The engine rewrites it after every hand. */}
+          <div className="table-player-earned" id="sessionNet" aria-label="Even for the game">
+            <span className="earned-figure flat">even</span>
+          </div>
+        </div>
+        <div className="table-match-record">
+          <span className="table-match-label">This match</span>
+          <div className="table-match-results" id="matchResults" aria-label="No hands completed yet" />
+        </div>
+        <div className="table-match-score" id="matchScore">0-0</div>
+      </div>
     </>
   );
 }

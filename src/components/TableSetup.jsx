@@ -22,8 +22,8 @@ export function TableSetup() {
         </div>
         <SettingLabel>Showdown guess</SettingLabel>
         <div className="speed-row">
-          <button className="speed-btn on" id="guessOn" type="button">Ask every hand</button>
-          <button className="speed-btn" id="guessOff" type="button">Off</button>
+          <button className="speed-btn" id="guessOn" type="button">Ask every hand</button>
+          <button className="speed-btn on" id="guessOff" type="button">Off</button>
         </div>
         <SettingLabel>Range guess each street</SettingLabel>
         <div className="speed-row">

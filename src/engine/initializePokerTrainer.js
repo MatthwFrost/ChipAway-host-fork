@@ -1,4 +1,4 @@
-import { buildCoachAdvice, buildHandReview, pctWhole, ci95Points } from './coach.js';
+import { buildCoachAdvice, buildCoachNudge, buildHandReview, coachQuip, coachReaction, pctWhole, ci95Points } from './coach.js';
 import { buildSpotModel } from './spotModel.js';
 import { blockerPct as blockerPctOf, buildRangeIndex as buildRangeIndexFor, calcEquity as calcEquityFor, handPercentile as handPercentileOf } from './equity.js';
 import { POS_MULT, decidePostflop, decidePreflop } from './botPolicy.js';
@@ -10,13 +10,22 @@ import {
   evOfBet, evOfCall, jointResponse, profileOf, projectedHeroRep, rangeWidth, responseTo,
 } from './opponentModel.js';
 import { analyzeHandShape, describeShape, outsToEquity, unseenCount } from './handShape.js';
+import { createHandRecorder } from './handRecorder.js';
+import { saveHand } from './handStore.js';
+import { snapshotAt, stepCount, visibleSteps } from './handReplay.js';
+import { findLeak as findLeakIn, heroMetrics as heroMetricsOf } from './leak.js';
+import { endGame, getLiveGame, migrateLegacySession, updateLiveGame } from './games.js';
+import { openOnReload } from './screen.js';
 import {
   RANK_CHARS, PIPS, makeDeck, shuffle, cardStr, cardTxt,
   cmpScore, evaluateBest, handName,
 } from './evaluator.js';
 
 export function initializePokerTrainer(){
-  if(window.__chipAwayInitialized)return;
+  // Returns the replay controller. Initialising twice is a no-op that still
+  // hands back the live one, so a remount cannot leave the caller holding
+  // nothing.
+  if(window.__chipAwayInitialized)return window.__chipAwayApi;
   window.__chipAwayInitialized=true;
 const clamp=function(v,a,b){return v<a?a:(v>b?b:v);};
 const sigmoid=function(x){return 1/(1+Math.exp(-x));};
@@ -72,7 +81,10 @@ let SPEED=1.15;
 const T=function(ms){return Math.round(ms*SPEED);};
 let players=[],deck=[],board=[],pot=0,street=0,currentBet=0,minRaise=BB;
 let dealerIdx=0,actingIdx=0,handLive=false,heroTurn=false,handNo=0;
-let streetRaises=0,revealAll=false,showProfiles=false,guessEnabled=true;
+// guessEnabled off by default: a finished hand shows its result rather than
+// stopping to ask you to put the villain on a hand. The question is still
+// there for anyone who wants it, behind "Ask every hand" in settings.
+let streetRaises=0,revealAll=false,showProfiles=false,guessEnabled=false;
 let lastAggressor=-1,pendingResult=null,villainIdx=-1;
 const STREETS=['Preflop','Flop','Turn','River','Showdown'];
 let seatConfig=[];
@@ -119,58 +131,201 @@ function buildSeats(){
       stack:el.querySelector('.seat-stack'),dealer:el.querySelector('.dealer-btn'),sig:''});
   });
 }
-function updateSeats(){
-  players.forEach(function(p,i){
+/* The read-only description of the table that the RENDERER works from — the
+   same idea as view() above, which does this for decision.js. Everything
+   drawn on the felt comes from here and nowhere else, which is what lets the
+   history screen hand paint() a reconstructed hand and get pixel-identical
+   output without a second renderer to keep in step. */
+function tableState(){
+  return {players:players,board:board,pot:pot,street:street,handLive:handLive,
+          actingIdx:actingIdx,villainIdx:villainIdx,dealerIdx:dealerIdx,
+          revealAll:revealAll,handNo:handNo};
+}
+function posNameIn(s,i){return POS_NAMES[(i-s.dealerIdx+s.players.length)%s.players.length]||'';}
+function updateSeats(s){
+  s.players.forEach(function(p,i){
     const r=seatRefs[i];
+    if(!r) return;
     r.el.classList.toggle('folded',p.folded);
-    r.el.classList.toggle('acting',handLive&&actingIdx===i&&!p.folded&&!p.allIn);
-    r.el.classList.toggle('villain',villainIdx===i);
-    r.dealer.classList.toggle('shown',dealerIdx===i);
+    r.el.classList.toggle('acting',s.handLive&&s.actingIdx===i&&!p.folded&&!p.allIn);
+    r.el.classList.toggle('villain',s.villainIdx===i);
+    r.dealer.classList.toggle('shown',s.dealerIdx===i);
     if(r.stack.textContent!==String(p.stack)) r.stack.textContent=p.stack;
-    const pn=posName(i);
+    const pn=posNameIn(s,i);
     if(r.pos.textContent!==pn) r.pos.textContent=pn;
-    const styleTxt=p.isHero?'':(showProfiles?PROFILES[p.profile].label:'');
+    const styleTxt=p.isHero?'':(showProfiles&&p.profile?PROFILES[p.profile].label:'');
     if(r.style.textContent!==styleTxt) r.style.textContent=styleTxt;
     r.style.classList.toggle('shown',!!styleTxt);
-    const show=p.isHero||revealAll;
+    const show=p.isHero||s.revealAll;
     const sig=p.hole.map(cardStr).join('')+'|'+(show?'1':'0')+'|'+(p.folded?'f':'');
     if(r.sig!==sig){
       r.sig=sig;
-      r.cards.innerHTML=p.hole.length?p.hole.map(function(c){return cardHTML(c,!p.isHero,!show,p.folded&&revealAll);}).join(''):'';
+      r.cards.innerHTML=p.hole.length?p.hole.map(function(c){return cardHTML(c,!p.isHero,!show,p.folded&&s.revealAll);}).join(''):'';
     }
     if(r.badge.textContent!==p.badge) r.badge.textContent=p.badge;
     r.badge.className='act-badge'+(p.badge?' show ':' ')+(p.badgeCls||'');
   });
 }
-let lastBoardCount=-1;
-function updateBoard(){
-  if(board.length!==lastBoardCount){
-    lastBoardCount=board.length;
-    $('boardCards').innerHTML=board.map(function(c){return cardHTML(c,false,false,false);}).join('');
+// Was a card COUNT, which is enough while a hand only ever gains cards. Replay
+// can step backwards onto a different board of the same length, and a count
+// would call that unchanged and leave the turn's card on a flop.
+let lastBoardSig='';
+function updateBoard(s){
+  const sig=s.board.map(cardStr).join('');
+  if(sig!==lastBoardSig){
+    lastBoardSig=sig;
+    $('boardCards').innerHTML=s.board.map(function(c){return cardHTML(c,false,false,false);}).join('');
     const kids=$('boardCards').children;
     for(let i=0;i<kids.length;i++) kids[i].style.animationDelay=(i*0.11)+'s';
   }
-  const potEl=$('potTag'),txt='Pot '+pot;
+  const potEl=$('potTag'),txt='Pot '+s.pot;
   if(potEl.textContent!==txt){potEl.textContent=txt;potEl.classList.add('bump');setTimeout(function(){potEl.classList.remove('bump');},300);}
-  $('streetTag').textContent=handLive?STREETS[Math.min(street,4)]:'—';
-  $('dealerLine').textContent=handLive?('Hand #'+handNo):'Dealer ready';
+  $('streetTag').textContent=s.handLive?STREETS[Math.min(s.street,4)]:'—';
+  $('dealerLine').textContent=s.replay?('Hand #'+s.handNo+' — replay'):(s.handLive?('Hand #'+s.handNo):'Dealer ready');
 }
-function paint(){updateSeats();updateBoard();}
+// No argument means "draw the live table". Anything else is a reconstructed
+// hand from handReplay.js, which carries the same fields.
+function paint(s){const t=s||tableState();updateSeats(t);updateBoard(t);}
 function setBadge(p,txt,cls){p.badge=txt;p.badgeCls=cls;}
 function clearBadges(){players.forEach(function(p){p.badge='';p.badgeCls='';});}
+/* The move list is a three-column table: move number, who acted, what they did.
+   #log is the tbody, so every row here is a <tr>. Three shapes go in it —
+   logMove for a numbered action, logNote for a named line that is not a move
+   (showdown reveals), and log for prose that spans all three columns. */
+let moveNo=0;
+// One hand at a time. The list used to accumulate every hand of the session,
+// which meant that by the third hand the auto-scroll had pushed the start of
+// the current hand — the blinds and everyone who acted before you — out of
+// view. Cleared on each deal, row one is always the hand's first move.
+function resetLog(){
+  $('log').innerHTML='';
+  moveNo=0;
+}
+function logRow(cls){
+  const tr=document.createElement('tr');
+  if(cls)tr.className=cls;
+  $('log').appendChild(tr);
+  return tr;
+}
+// Pinned after the cells are in, or scrollHeight would still be measuring an
+// empty row. The scroller is the wrapper, not the tbody.
+function pinLog(){
+  const s=$('log').closest('.log-scroll');
+  if(s)s.scrollTop=s.scrollHeight;
+}
 function log(msg,cls){
-  const l=$('log');
-  if(l.dataset.fresh!=='1'){l.innerHTML='';l.dataset.fresh='1';}
-  const d=document.createElement('div');
-  if(cls)d.className=cls;
-  d.innerHTML=msg;l.appendChild(d);l.scrollTop=l.scrollHeight;
+  const tr=logRow(cls);
+  const td=document.createElement('td');
+  td.colSpan=3;td.innerHTML=msg;
+  tr.appendChild(td);pinLog();
+}
+function logCells(cls,no,name,act){
+  const tr=logRow(cls);
+  tr.innerHTML='<td class="log-no">'+no+'</td><td class="log-who">'+name+
+               '</td><td class="log-act">'+act+'</td>';
+  pinLog();
+}
+/* The move list already decided that this is a discrete, ordered, meaningful
+   thing that happened — it just wrote it as HTML. `rec` is the same event as
+   data, so recording stays at the one chokepoint every action already passes
+   through rather than being sprinkled over seven call sites.
+   `to` and `allIn` are read off the player AFTER the action has moved the
+   money, which is why this is called last at every site. */
+function logMove(p,act,rec){
+  logCells('move',++moveNo,who(p),act);
+  if(rec) recorder.action({seat:p.id,street:street,action:rec.action,
+    put:rec.put||0,to:p.bet,potBefore:rec.potBefore||0,toCall:rec.toCall||0,allIn:p.allIn});
+}
+function logNote(p,text){logCells('note','',who(p),text);}
+function who(p){return p.isHero?'<span class="hl">'+p.name+'</span>':p.name;}
+
+// The moves block has two faces: the list while a hand is running, the result
+// card once it is over. Nothing is thrown away by flipping -- the rows stay in
+// the tbody behind the card, which is what Review puts back on screen.
+function setPanelView(v){
+  const b=$('actionBox');
+  if(b)b.dataset.view=v;
+}
+// What the hand cost or made, and who took each pot. Read off pendingResult
+// and lastOutcome, so it must run after applyResult has moved the chips.
+function renderHandResult(){
+  const el=$('handResult');
+  if(!el) return;
+  const net=lastOutcome?lastOutcome.net:0;
+  const tone=net>0?'pos':(net<0?'neg':'flat');
+  const figure=net>0?('+'+net):(net<0?('−'+Math.abs(net)):'even');
+  const pots=(pendingResult||[]).map(function(a,i){
+    const names=a.winners.map(function(w){return w.name;}).join(' & ');
+    const verb=a.winners.length>1?'split':(a.winners[0].isHero?'take':'takes');
+    const label=pendingResult.length>1?((i===0?'Main pot':'Side pot '+i)+' — '):'';
+    // Parenthesised rather than "with ...": the article varies by hand name
+    // ("a pair", but "two pair", "four of a kind"), and this dodges it.
+    const shown=a.contested&&a.best[0]>=0?(' ('+handName(a.best).toLowerCase()+')'):'';
+    return '<li>'+label+names+' '+verb+' '+a.amount+shown+'</li>';
+  }).join('');
+  el.innerHTML='<div class="result-figure '+tone+'">'+figure+'</div>'+
+               '<div class="result-sub">chips this hand</div>'+
+               '<ul class="result-pots">'+pots+'</ul>';
+}
+
+function renderMatchResults(){
+  const trail=$('matchResults'),score=$('matchScore');
+  if(!trail||!score) return;
+  const recent=matchResults.slice(-5);
+  let wins=0,losses=0;
+  trail.innerHTML=recent.map(function(result,i){
+    const kind=result>0?'win':(result<0?'loss':'even');
+    if(kind==='win')wins++;
+    if(kind==='loss')losses++;
+    const mark=kind==='win'?'✓':(kind==='loss'?'×':'−');
+    const label=kind==='win'?'Won hand '+(i+1):(kind==='loss'?'Lost hand '+(i+1):'Even hand '+(i+1));
+    return '<span class="match-result '+kind+'" title="'+label+'" aria-label="'+label+'">'+mark+'</span>';
+  }).join('');
+  score.textContent=wins+'-'+losses;
+  trail.setAttribute('aria-label',recent.length?wins+' wins, '+losses+' losses':'No hands completed yet');
+}
+
+// The session ledger beside the name: everything won or lost since the first
+// deal, signed against the stack you sat down with. The minus is a true minus
+// sign rather than a hyphen, to match the hand result figure.
+function renderSessionNet(){
+  const el=$('sessionNet');
+  if(!el) return;
+  const tone=sessionNet>0?'pos':(sessionNet<0?'neg':'flat');
+  const figure=sessionNet>0?('+'+sessionNet):(sessionNet<0?('−'+Math.abs(sessionNet)):'even');
+  const label=sessionNet>0?('Up '+sessionNet+' chips for the game'):
+              (sessionNet<0?('Down '+Math.abs(sessionNet)+' chips for the game'):'Even for the game');
+  // "even" stands on its own; "even chips" reads as a quantity of nothing.
+  el.innerHTML='<span class="earned-figure '+tone+'">'+figure+'</span>'+
+               (sessionNet?'<span class="earned-sub">chips</span>':'');
+  el.setAttribute('aria-label',label);
 }
 
 /* ============================================================
    8. EQUITY PANEL
    ============================================================ */
 
-function hideCoach(){$('eqBody').classList.remove('open');$('eqHidden').style.display='block';}
+// The bubble is never empty: hero's turn gets the question, everything else
+// gets small talk. The quip is keyed to the hand number so it holds steady for
+// the whole hand rather than re-rolling every time a bot acts.
+// The bubble has exactly three things it can be saying, and one function that
+// decides which. Splitting this across the callers is what let a freshly played
+// move get overwritten with small talk: recordDecision() set the reaction and
+// disableHeroControls() immediately painted over it.
+//
+// Priority: the question hero is facing, else the move hero just made, else
+// small talk. Quips and reactions are keyed to the hand number so they hold
+// steady for the whole hand instead of re-rolling every time a bot acts.
+let lastHeroAction=null;   // family of hero's most recent move this hand
+function paintBubble(){
+  const el=$('coachNudge');
+  if(heroTurn){
+    const flat=adviceSpot();
+    if(flat){el.innerHTML=buildCoachNudge(flat,stats.hands);return;}
+  }
+  if(lastHeroAction&&handLive){el.innerHTML=coachReaction(lastHeroAction,stats.hands);return;}
+  el.innerHTML=coachQuip('idle',stats.hands);
+}
 const RING_C=2*Math.PI*32;
 let lastEq=null;          // cached equity for the current spot
 let lastEqKey='';
@@ -282,52 +437,42 @@ function adviceSpot(){
   };
 }
 
-function showCoach(){
+// The range bar and blocker line used to sit in the bubble. They are a read on
+// the opponent rather than a question for the player, so they travel with the
+// decision into the review. Captured live: both depend on range state that
+// decays every street, so neither can be rebuilt afterwards.
+function opponentReadMarkup(){
   const hero=players[0];
-  if(!handLive||hero.folded||!hero.hole.length) return;
-  renderEquityTab();
-  if(!lastEq){
-    $('coachVerdict').textContent='Equity is temporarily unavailable in this spot.';
-    ['coachLines','coachReason','coachPoints'].forEach(function(id){$(id).innerHTML='';});
-    $('coachConf').textContent='';
-  }
-  $('eqHidden').style.display='none';
-  $('eqBody').classList.add('open');
-  if(!lastEq) return;
   const opps=players.filter(function(p){return !p.folded&&!p.isHero;});
-
+  if(!opps.length) return '';
   let main=opps[0];
   opps.forEach(function(o){if((o.rLo||0)>(main.rLo||0))main=o;});
-  const blk=main?blockerPct(hero.hole,main):0;
-  $('eqSub').innerHTML=main?('your cards block <b>'+Math.round(blk)+'%</b> of '+main.name+"'s value combos"):'';
-  if(main){
-    const vLo=(main.rLo||0)*100, bl=(main.rBluff||0);
-    $('rangeBar').innerHTML='<div class="rb-lab"><span>'+main.name+"'s implied range</span><span>"+
-      (bl>0.02?Math.round(bl*100)+'% air':'linear')+'</span></div>'+
-      '<div class="rb-track"><div class="rb-val" style="left:'+vLo+'%;right:0"></div>'+
-      (bl>0.02?'<div class="rb-bluff" style="width:'+(BLUFF_TOP*100)+'%;opacity:'+Math.min(1,bl*2.2)+'"></div>':'')+'</div>';
-  } else $('rangeBar').innerHTML='';
+  const vLo=(main.rLo||0)*100, bl=(main.rBluff||0);
+  const blk=blockerPct(hero.hole,main);
+  return '<div class="rangebar"><div class="rb-lab"><span>'+main.name+"'s implied range</span><span>"+
+    (bl>0.02?Math.round(bl*100)+'% air':'linear')+'</span></div>'+
+    '<div class="rb-track"><div class="rb-val" style="left:'+vLo+'%;right:0"></div>'+
+    (bl>0.02?'<div class="rb-bluff" style="width:'+(BLUFF_TOP*100)+'%;opacity:'+Math.min(1,bl*2.2)+'"></div>':'')+'</div></div>'+
+    '<div class="eq-sub">your cards block <b>'+Math.round(blk)+'%</b> of '+main.name+"'s value combos</div>";
+}
 
-  const flat=adviceSpot();
-  if(!flat) return;
-  const advice=buildCoachAdvice(flat);
-  const CONF={'clear':'clear','solid':'best of the options','marginal':'close','toss-up':'your call'};
-  $('coachVerdict').innerHTML=advice.verdict;
-  $('coachConf').textContent=CONF[advice.clarity]||'';
-  $('coachConf').className='coach-conf conf-'+advice.clarity.replace('-','');
-  $('coachReason').innerHTML=advice.reason;
-  $('coachPoints').innerHTML=advice.points.map(function(p){return '<li>'+p+'</li>';}).join('');
-  $('coachLines').innerHTML=advice.lines.map(function(l){return '<p>'+l+'</p>';}).join('');
-  $('coachFreqBody').innerHTML='<table class="val-tab"><tr><th>action</th><th>EV</th><th>they fold</th><th>they raise</th></tr>'+
-    advice.frequencies.map(function(f){
+/* ---- the detail surfaces, shared by every place that renders advice ---- */
+
+const CONF={'clear':'clear','solid':'best of the options','marginal':'close','toss-up':'your call'};
+
+function frequencyTableMarkup(frequencies,nContesting){
+  return '<table class="val-tab"><tr><th>action</th><th>EV</th><th>they fold</th><th>they raise</th></tr>'+
+    frequencies.map(function(f){
       const cls=f.recommended?'ev-pos':'';
       const tag=f.recommended?' ← pick':(f.tied?' <span class="fq-tied">= same call</span>':'');
       return '<tr><td class="'+cls+'">'+f.label+tag+'</td><td class="'+cls+'">'+f.ev+'</td><td>'+(f.fold||'—')+'</td><td>'+(f.raise||'—')+'</td></tr>';
     }).join('')+'</table>'+
-    '<div class="mini-note">Frequencies, not commandments. Lines marked <b>= same call</b> rate about the same as the pick — the same decision in chips, and mixing between them is what stops you being readable.</div>';
-  $('coachMathsBody').innerHTML=advice.maths.map(function(m){return '<div class="coach-maths-line">'+m+'</div>';}).join('')+
-    '<div class="mini-note">EV figures price the '+contestingOpps().length+' opponent(s) expected to keep going, use your equity against the hands that would actually call, and include a small credit for acting last. The equity tab above is against all '+opps.length+' player(s) still in, so the two differ by a point or two.</div>';
-  renderValueBet();
+    '<div class="mini-note">Frequencies, not commandments. Lines marked <b>= same call</b> rate about the same as the pick — the same decision in chips, and mixing between them is what stops you being readable.</div>'+
+    (nContesting?'<div class="mini-note">EV figures price the '+nContesting+' opponent(s) expected to keep going, use your equity against the hands that would actually call, and include a small credit for acting last.</div>':'');
+}
+
+function mathsMarkup(maths){
+  return maths.map(function(m){return '<div class="coach-maths-line">'+m+'</div>';}).join('');
 }
 
 
@@ -364,7 +509,13 @@ function applyResult(awards){
   awards.forEach(function(a){
     const share=Math.floor(a.amount/a.winners.length);
     const rem=a.amount-share*a.winners.length;
-    a.winners.forEach(function(w,i){w.stack+=share+(i===0?rem:0);});
+    a.winners.forEach(function(w,i){
+      const got=share+(i===0?rem:0);
+      w.stack+=got;
+      // The odd chip goes to the first winner. Replay has to award the same
+      // way or a split pot reconstructs stacks that are one chip out.
+      recorder.award(w.id,got);
+    });
   });
 }
 
@@ -389,6 +540,7 @@ function postBlind(i,amt){
   const p=players[i],put=Math.min(amt,p.stack);
   p.stack-=put;p.bet+=put;p.committed+=put;
   if(p.stack===0)p.allIn=true;
+  return put;
 }
 function collectBets(){
   players.forEach(function(p){pot+=p.bet;p.bet=0;p.acted=false;p.mayRaise=true;p.raises=0;});
@@ -399,23 +551,32 @@ function startHand(){
   players.forEach(function(p){if(p.stack<=0)p.stack=START_STACK;});
   heroStackStart=players[0].stack;lastOutcome=null;
   deck=shuffle(makeDeck());
-  board=[];lastBoardCount=-1;pot=0;street=0;currentBet=0;minRaise=BB;
-  handLive=true;revealAll=false;streetRaises=0;lastAggressor=-1;villainIdx=-1;pendingResult=null;lastMultiway=[];rgAskedStreet=-1;handDecisions=[];heroSpot=null;tipsOpen=false;$('evReview').innerHTML='';
+  board=[];lastBoardSig='';pot=0;street=0;currentBet=0;minRaise=BB;
+  handLive=true;revealAll=false;streetRaises=0;lastAggressor=-1;villainIdx=-1;pendingResult=null;lastMultiway=[];rgAskedStreet=-1;handDecisions=[];heroSpot=null;lastHeroAction=null;tipsOpen=false;$('evReview').innerHTML='';
   players.forEach(function(p){p.hole=[];p.folded=false;p.allIn=false;p.bet=0;p.committed=0;p.acted=false;p.mayRaise=true;p.raises=0;p.badge='';p.badgeCls='';p.rLo=0;p.rBluff=0;p.score=null;});
   hf={vpip:false,pfr:false,raisedPre:false,f3bCounted:false,sawShowdown:false,aggro:0,calls:0};
-  hideCoach();$('guessBox').style.display='none';
+  paintBubble();$('guessBox').style.display='none';
   dealerIdx=(dealerIdx+1)%players.length;
   buildRangeIndex();
   let di=0;
   for(let r=0;r<2;r++) players.forEach(function(p){p.hole.push(deck[di++]);});
   deck=deck.slice(di);
+  // Opened after the deal, before the blinds, so the stacks it captures are
+  // the ones everyone sat down with — including the top-up above.
+  const liveGame=getLiveGame();
+  recorder.begin({handNo:handNo,players:players,dealerIdx:dealerIdx,heroIndex:0,
+    sb:SB,bb:BB,startStack:START_STACK,gameId:liveGame?liveGame.id:null});
   const sbIdx=(dealerIdx+1)%players.length,bbIdx=(dealerIdx+2)%players.length;
-  postBlind(sbIdx,SB);postBlind(bbIdx,BB);
+  const sbPut=postBlind(sbIdx,SB),bbPut=postBlind(bbIdx,BB);
+  recorder.blind(players[sbIdx].id,sbPut);recorder.blind(players[bbIdx].id,bbPut);
   currentBet=BB;
   setBadge(players[sbIdx],'SB '+SB,'b-blind');
   setBadge(players[bbIdx],'BB '+BB,'b-blind');
-  log('<span class="street">Hand #'+handNo+' · preflop</span>','street');
-  log(players[sbIdx].name+' posts '+SB+', '+players[bbIdx].name+' posts '+BB);
+  resetLog();setPanelView('moves');
+  // No `rec` argument: the blinds are already recorded above, and posting one
+  // is not a decision anybody made.
+  logMove(players[sbIdx],'posts '+SB);
+  logMove(players[bbIdx],'posts '+BB);
   actingIdx=nextActive(bbIdx);
   paint();
   renderEquityTab(true);
@@ -443,9 +604,16 @@ function advanceStreet(){
     else board.push(deck.pop());
     buildRangeIndex();
     players.forEach(function(p){p.rLo*=0.88;p.rBluff*=0.80;});
-    log('<span class="street">'+STREETS[street]+' · '+board.map(cardTxt).join(' ')+'</span>','street');
+    // After the decay: the snapshot is what everyone is repping going INTO
+    // this street, not what they were repping leaving the last one.
+    recorder.street(street,board,players);
+    // No band for the new street: the move list stays moves only. The board
+    // itself is on the table, and the street name is on #streetTag.
     actingIdx=nextActive(dealerIdx);
-    hideCoach();renderEquityTab();paint();
+    // A new card is on the table, so a reaction to last street's move has gone
+    // stale — the bubble drops back to small talk until hero is asked again.
+    lastHeroAction=null;
+    paintBubble();renderEquityTab();paint();
     $('status').innerHTML='<b>'+STREETS[street]+'</b> — '+board.map(cardTxt).join(' ');
     const canAct=players.filter(function(p){return !p.folded&&!p.allIn;});
     if(canAct.length<=1){setTimeout(advanceStreet,T(1500));return;}
@@ -464,17 +632,21 @@ function view(){
           calledTrials:CALLED_TRIALS,equityTrials:520};
 }
 function heroFold(){
-  const h=players[0];h.folded=true;h.acted=true;
+  const h=players[0];
+  const pbFold=potBefore(),tcFold=Math.min(currentBet-h.bet,h.stack);
+  h.folded=true;h.acted=true;
   if(street===0&&hf.raisedPre&&currentBet>h.bet&&!hf.f3bCounted){stats.f3bOpp++;stats.f3b++;hf.f3bCounted=true;}
   recordDecision('fold');
-  setBadge(h,'fold','b-fold');log('<span class="hl">You</span> fold');
-  disableHeroControls();hideCoach();clearEquityTab();
+  setBadge(h,'fold','b-fold');
+  logMove(h,'folds',{action:'fold',put:0,potBefore:pbFold,toCall:tcFold});
+  disableHeroControls();paintBubble();clearEquityTab();
   $('status').innerHTML='You folded — the hand plays on. Everything is revealed at the end.';
   paint();actingIdx=nextActive(0);setTimeout(step,T(700));
 }
 function heroCall(){
   const h=players[0];
   const toCall=Math.min(currentBet-h.bet,h.stack);
+  const pbCall=potBefore();
   if(street===0){
     if(toCall>0) hf.vpip=true;
     if(hf.raisedPre&&currentBet>h.bet&&!hf.f3bCounted){stats.f3bOpp++;hf.f3bCounted=true;}
@@ -484,13 +656,15 @@ function heroCall(){
   recordDecision(toCall===0?'check':'call',toCall);
   if(toCall>0) narrowCall(h); else narrowCheck(h);
   setBadge(h,toCall===0?'check':'call '+toCall,'b-passive');
-  log('<span class="hl">You</span> '+(toCall===0?'check':'call '+toCall));
+  logMove(h,toCall===0?'checks':'calls '+toCall,
+    {action:toCall===0?'check':'call',put:toCall,potBefore:pbCall,toCall:toCall});
   disableHeroControls();paint();
   actingIdx=nextActive(0);setTimeout(step,T(700));
 }
 function heroRaise(){
   const h=players[0];
   const pb=potBefore();
+  const tcRaise=Math.min(currentBet-h.bet,h.stack);
   const target=+$('raiseSlider').value;
   const put=Math.min(target-h.bet,h.stack);
   if(street===0){
@@ -513,7 +687,8 @@ function heroRaise(){
   narrowAggro(h,put/Math.max(1,pb));
   setBadge(h,(h.allIn?'all in ':'raise to ')+h.bet,'b-aggro');
   players.forEach(function(p){if(p!==h&&!p.folded&&!p.allIn){p.acted=false;if(isFullRaise)p.mayRaise=true;}});
-  log('<span class="hl">You</span> '+(h.allIn?'move all in for':'raise to')+' '+h.bet);
+  logMove(h,(h.allIn?'all in for ':'raises to ')+h.bet,
+    {action:tcRaise>0?'raise':'bet',put:put,potBefore:pb,toCall:tcRaise});
   disableHeroControls();paint();
   actingIdx=nextActive(0);setTimeout(step,T(700));
 }
@@ -537,15 +712,26 @@ function applyBotRaise(p,target,toCall,label){
   narrowAggro(p,put/Math.max(1,pb));
   setBadge(p,(p.allIn?'all in ':label+' ')+p.bet,'b-aggro');
   players.forEach(function(x){if(x!==p&&!x.folded&&!x.allIn){x.acted=false;if(isFullRaise)x.mayRaise=true;}});
-  log(p.name+' '+(p.allIn?'moves all in for':(toCall>0?'raises to':'bets'))+' '+p.bet);
+  logMove(p,(p.allIn?'all in for ':(toCall>0?'raises to ':'bets '))+p.bet,
+    {action:toCall>0?'raise':'bet',put:put,potBefore:pb,toCall:toCall});
 }
-function botFold(p){p.folded=true;p.acted=true;setBadge(p,'fold','b-fold');log(p.name+' folds');}
-function botCheck(p){p.acted=true;narrowCheck(p);setBadge(p,'check','b-passive');log(p.name+' checks');}
+function botFold(p){
+  const pbF=potBefore(),tcF=Math.min(currentBet-p.bet,p.stack);
+  p.folded=true;p.acted=true;setBadge(p,'fold','b-fold');
+  logMove(p,'folds',{action:'fold',put:0,potBefore:pbF,toCall:tcF});
+}
+function botCheck(p){
+  const pbC=potBefore();
+  p.acted=true;narrowCheck(p);setBadge(p,'check','b-passive');
+  logMove(p,'checks',{action:'check',put:0,potBefore:pbC,toCall:0});
+}
 function botCall(p,toCall){
+  const pbCall=potBefore();
   p.stack-=toCall;p.bet+=toCall;p.committed+=toCall;p.acted=true;
   if(p.stack===0)p.allIn=true;
   narrowCall(p);
-  setBadge(p,'call '+toCall,'b-passive');log(p.name+' calls '+toCall);
+  setBadge(p,'call '+toCall,'b-passive');
+  logMove(p,'calls '+toCall,{action:'call',put:toCall,potBefore:pbCall,toCall:toCall});
 }
 // Both decisions are made by botPolicy.js — the same pure functions the
 // calibration harness drives. These only translate the answer into table
@@ -627,6 +813,7 @@ function pickVillain(contenders){
 }
 function finishHand(){
   collectBets();
+  recorder.collect();
   handLive=false;heroTurn=false;disableHeroControls();
   const contenders=players.filter(function(p){return !p.folded;});
   pendingResult=computeResult();
@@ -666,6 +853,14 @@ function concludeHand(guess){
                    :'<span class="guess-result wrong">You said '+BUCKETS[guess].toLowerCase()+'; '+v.name+' had '+BUCKETS[actual].toLowerCase()+'.</span>';
     log((right?'<span class="hl">Read correct</span>':'Read missed')+' — put '+v.name+' on '+BUCKETS[guess].toLowerCase()+', actually '+BUCKETS[actual].toLowerCase());
   }
+  // Recorded before the chips move, so the replay reveals cards and then pays
+  // the pot in the order the table actually does it.
+  const atShowdown=players.filter(function(p){return !p.folded;});
+  if(atShowdown.length>1&&board.length>=5){
+    recorder.showdown(atShowdown.map(function(p){
+      return {seat:p.id,hole:p.hole,handName:handName(evaluateBest(p.hole.concat(board)))};
+    }));
+  }
   applyResult(pendingResult);
   revealAll=true;
   const contenders=players.filter(function(p){return !p.folded;});
@@ -676,7 +871,7 @@ function concludeHand(guess){
     log('<span class="hl">'+label+' '+a.amount+'</span> → '+names+(a.contested&&a.best[0]>=0?' ('+handName(a.best).toLowerCase()+')':''));
   });
   if(contenders.length>1&&board.length>=5){
-    contenders.forEach(function(p){log(p.name+': '+p.hole.map(cardTxt).join(' ')+' — '+handName(evaluateBest(p.hole.concat(board))));});
+    contenders.forEach(function(p){logNote(p,p.hole.map(cardTxt).join(' ')+' — '+handName(evaluateBest(p.hole.concat(board))));});
   }
   const top=pendingResult[0];
   const names=top?top.winners.map(function(w){return w.name;}).join(' & '):'Nobody';
@@ -691,7 +886,7 @@ function concludeHand(guess){
       if(cf){
         cf.sort(function(a,b){return b.pct-a.pct;});
         log('<span class="street">If it had run out</span>','street');
-        cf.forEach(function(r){log(r.p.name+': '+r.p.hole.map(cardTxt).join(' ')+' — '+r.pct.toFixed(0)+'% to win');});
+        cf.forEach(function(r){logNote(r.p,r.p.hole.map(cardTxt).join(' ')+' — '+r.pct.toFixed(0)+'% to win');});
       }
     }
   }
@@ -705,11 +900,27 @@ function concludeHand(guess){
   lastOutcome={net:players[0].stack-heroStackStart,
                showdown:contenders.length>1&&board.length>=5,
                folded:players[0].folded};
+  matchResults.push(lastOutcome.net);
+  if(matchResults.length>5)matchResults.shift();
+  // The hand is over and cannot be replayed to try again, so a storage failure
+  // here is swallowed by handStore rather than allowed to break the deal.
+  const recorded=recorder.finish({
+    net:lastOutcome.net,
+    potFinal:(pendingResult||[]).reduce(function(s,a){return s+a.amount;},0),
+    showdown:lastOutcome.showdown,
+    heroFolded:lastOutcome.folded,
+    winners:pendingResult&&pendingResult.length?pendingResult[0].winners.map(function(w){return w.id;}):[],
+    decisions:handDecisions,
+  });
+  if(recorded) saveHand(recorded);
+  sessionNet+=lastOutcome.net;
+  renderMatchResults();renderSessionNet();
+  renderHandResult();setPanelView('result');
   renderHandReview();renderEvCharts();renderLeak();
   renderStats();renderDrift();$('rangeGuessWrap').innerHTML='';
   saveSession();
   villainIdx=-1;paint();
-  $('btnDeal').disabled=false;$('btnDeal').textContent='Deal next hand';
+  $('btnDeal').disabled=false;setPhase('post');
 }
 
 /* ============================================================
@@ -720,12 +931,9 @@ const SIGNATURES=[
   {k:'lag',vpip:34,pfr:26,af:3.0},{k:'station',vpip:45,pfr:6,af:0.4},
   {k:'maniac',vpip:58,pfr:38,af:5.0}
 ];
-function heroMetrics(){
-  const h=Math.max(1,stats.hands);
-  return {vpip:100*stats.vpip/h,pfr:100*stats.pfr/h,af:stats.aggro/Math.max(1,stats.calls),
-    wtsd:100*stats.wtsd/h,f3b:stats.f3bOpp?100*stats.f3b/stats.f3bOpp:null,
-    read:stats.guessTotal?100*stats.guessRight/stats.guessTotal:null};
-}
+// The maths lives in leak.js so the dashboard's lifetime figures and the
+// table's session figures are computed by the same code.
+function heroMetrics(){ return heroMetricsOf(stats); }
 function renderStats(){
   const m=heroMetrics();
   const cells=[['Hands',stats.hands,''],['VPIP',m.vpip.toFixed(0),'%'],['PFR',m.pfr.toFixed(0),'%'],
@@ -901,6 +1109,7 @@ function renderDrift(){
   const el=$('drift');
   el.textContent=msg;
   el.classList.toggle('on',!!msg);
+  syncTips();
 }
 
 
@@ -915,9 +1124,19 @@ function renderDrift(){
 // live in opponentModel.js.
 const rankOptions=D.rankOptions;
 
+// One recorder for the whole session: begin() opens a hand, finish() closes it
+// and hands back the record. Shared with the headless table in table.js, so
+// what the round-trip tests verify is this exact module.
+const recorder=createHandRecorder();
+
 let handDecisions=[];   // every hero decision this hand
 let heroStackStart=START_STACK;
 let evRecords=[];       // one entry per hand, persisted
+let matchResults=[];    // compact win/loss trail for the player strip
+// Chips won or lost since the session began, kept as a running sum rather than
+// read off the stack: a busted seat is rebought to START_STACK in startHand(),
+// so current-stack-minus-start would quietly forget every bust.
+let sessionNet=0;
 
 // Field composition, the positional credit and hero's equity are all priced by
 // decision.js so the coach panel and the headless backtest agree exactly.
@@ -928,6 +1147,9 @@ function heroEquityNow(){ return D.heroEquityNow(view()); }
 function nOppLive(){return players.filter(function(p){return !p.folded&&!p.isHero;}).length;}
 function snapshotSpot(){ return D.snapshotSpot(view()); }
 function recordDecision(kind,amount){
+  // Set before the early return: hero played a move either way, and the bubble
+  // should answer it even in the spots the review has nothing to record.
+  lastHeroAction=kind;
   if(!heroSpot) return;
   let opt=null,label=kind;
   if(kind==='fold'||kind==='check'){
@@ -954,14 +1176,57 @@ function recordDecision(kind,amount){
   const evTaken=opt?opt.ev:0;
   handDecisions.push({street:heroSpot.street,streetName:STREETS[Math.min(heroSpot.street,4)],
     taken:label,evTaken:evTaken,best:heroSpot.best,cost:Math.max(0,heroSpot.best.ev-evTaken),
-    equity:heroSpot.equity,pot:heroSpot.pot,toCall:heroSpot.toCall,nOpp:nOppLive()});
-  heroSpot=null;
+    equity:heroSpot.equity,pot:heroSpot.pot,toCall:heroSpot.toCall,nOpp:nOppLive(),
+    detail:heroDetail});
+  heroSpot=null;heroDetail=null;
 }
 let heroSpot=null;
+// The coach's full answer for the spot hero is facing, captured the moment the
+// spot is snapshotted rather than when they act. By the time heroFold() calls
+// recordDecision() it has already set hero.folded, and adviceSpot() returns
+// null for a folded hero — so capturing at action time would silently lose the
+// advice for every fold, which is the decision most worth reviewing.
+let heroDetail=null;
+function captureHeroDetail(){
+  const flat=adviceSpot();
+  heroDetail=flat?{
+    advice:buildCoachAdvice(flat),
+    opponentRead:opponentReadMarkup(),
+    valueBet:valueBetMarkup(),
+    nContesting:contestingOpps().length,
+  }:null;
+}
 
 // Task 6: decision quality and outcome are separate facts, and the review says
-// so out loud. Layer 1 is a plain-language verdict, layer 2 the per-street
-// frequencies, layer 3 the maths -- both optional, both folded away by default.
+// so out loud. Layer 1 is a plain-language verdict, layer 2 the coach's full
+// answer for each street, folded away by default.
+
+// One street, opened up: what the coach would have said had it been willing to
+// say it while the hand was live. The bubble only ever asked the question.
+function streetSectionMarkup(d){
+  const head=d.streetName+' — you '+d.taken+
+    (d.cost>1?' <span class="ev-neg">(−'+d.cost.toFixed(0)+' chips)</span>':'');
+  if(!d.detail){
+    return '<details class="coach-disc"><summary>'+head+'</summary><div class="coach-disc-body">'+
+      '<p class="mini-note">No read was available for this spot.</p></div></details>';
+  }
+  const a=d.detail.advice;
+  let body='<div class="coach-head"><div class="coach-verdict">'+a.verdict+'</div>'+
+    '<span class="coach-conf conf-'+a.clarity.replace('-','')+'">'+(CONF[a.clarity]||'')+'</span></div>'+
+    '<div class="coach-reason">'+a.reason+'</div>';
+  if(a.points.length) body+='<ul class="coach-points">'+a.points.map(function(p){return '<li>'+p+'</li>';}).join('')+'</ul>';
+  body+=d.detail.opponentRead+d.detail.valueBet;
+  if(a.lines.length){
+    body+='<details class="coach-disc"><summary>Why this</summary><div class="coach-lines coach-disc-body">'+
+      a.lines.map(function(l){return '<p>'+l+'</p>';}).join('')+'</div></details>';
+  }
+  body+='<details class="coach-disc"><summary>Action frequencies</summary><div class="coach-disc-body">'+
+    frequencyTableMarkup(a.frequencies,d.detail.nContesting)+'</div></details>';
+  body+='<details class="coach-disc"><summary>Show the maths</summary><div class="coach-disc-body">'+
+    mathsMarkup(a.maths)+'</div></details>';
+  return '<details class="coach-disc"><summary>'+head+'</summary><div class="coach-disc-body">'+body+'</div></details>';
+}
+
 let lastOutcome=null;
 function renderHandReview(){
   const el=$('evReview');
@@ -970,14 +1235,10 @@ function renderHandReview(){
   const cls=review.clean?'ev-good':'ev-miss';
   let html='<div class="ev-box"><div class="review-verdict '+(review.clean?'good':'warn')+'">'+review.verdict+'</div>';
   html+='<div class="'+cls+'">'+review.lines.map(function(l){return '<p>'+l+'</p>';}).join('')+'</div>';
-  html+='<details class="coach-disc"><summary>Street by street</summary><div class="coach-disc-body">'+
-    '<table class="val-tab"><tr><th>street</th><th>you</th><th>EV</th><th>best</th></tr>'+
-    review.frequencies.map(function(f){
-      return '<tr><td>'+f.street+'</td><td>'+f.taken+'</td><td class="'+(f.best?'ev-neg':'ev-pos')+'">'+f.ev+'</td>'+
-        '<td>'+(f.best?f.best+' ('+f.bestEv+')'+(f.fold?' · folds '+f.fold:''):'best available')+'</td></tr>';
-    }).join('')+'</table></div></details>';
-  html+='<details class="coach-disc"><summary>Show the maths</summary><div class="coach-disc-body">'+
-    review.maths.map(function(m){return '<div class="coach-maths-line">'+m+'</div>';}).join('')+'</div></details>';
+  html+='<div class="review-streets"><div class="box-label">What the coach saw</div>'+
+    handDecisions.map(streetSectionMarkup).join('')+'</div>';
+  html+='<details class="coach-disc"><summary>Cost of the hand</summary><div class="coach-disc-body">'+
+    mathsMarkup(review.maths)+'</div></details>';
   el.innerHTML=html+'</div>';
 }
 
@@ -1030,58 +1291,62 @@ function renderEvCharts(){
 /* ============================================================
    13h. LEAK OF THE SESSION — surface one thing, not twenty
    ============================================================ */
-function findLeak(){
-  if(stats.hands<12) return '';
-  const m=heroMetrics();
-  const cand=[];
-  if(stats.f3bOpp>=4&&m.f3b!==null&&m.f3b>75)
-    cand.push({w:3,t:'You fold to 3-bets <b>'+m.f3b.toFixed(0)+'%</b> of the time. Above about 70% and observant players can 3-bet you relentlessly with anything.'});
-  if(m.af<0.6&&stats.calls>=8)
-    cand.push({w:4,t:'Aggression factor <b>'+m.af.toFixed(2)+'</b> \u2014 you are calling far more than betting. Calling only wins when you have the best hand; betting can win either way.'});
-  if(m.vpip>55&&stats.hands>=15)
-    cand.push({w:3,t:'You are playing <b>'+m.vpip.toFixed(0)+'%</b> of hands. Even the loosest winning regulars sit near 35% at 6-max.'});
-  if(m.vpip<14&&stats.hands>=20)
-    cand.push({w:2,t:'You are playing just <b>'+m.vpip.toFixed(0)+'%</b> of hands. Folding this much means the blinds grind you down \u2014 look for steals in late position.'});
-  if(m.vpip>0&&(m.vpip-m.pfr)>28&&stats.hands>=15)
-    cand.push({w:3,t:'You enter <b>'+m.vpip.toFixed(0)+'%</b> of pots but raise only <b>'+m.pfr.toFixed(0)+'%</b>. That gap is limping and calling \u2014 it plays big pots out of position with weak ranges.'});
-  if(stats.guessTotal>=8&&m.read!==null&&m.read<35)
-    cand.push({w:2,t:'Your hand reads are landing <b>'+m.read.toFixed(0)+'%</b> of the time. Reveal the equity panel more often after acting, and check what their betting actually represented.'});
-  if(evRecords.length>=10){
-    const avg=evRecords.reduce(function(a,r){return a+r.cost;},0)/evRecords.length;
-    if(avg>12) cand.push({w:5,t:'You are leaking about <b>'+avg.toFixed(0)+'</b> chips of EV per hand. The decision review under each hand shows exactly where \u2014 most of it is usually one street.'});
-  }
-  if(!cand.length) return '';
-  cand.sort(function(a,b){return b.w-a.w;});
-  return cand[0].t;
-}
+// Thresholds and wording live in leak.js; this only supplies the live game's
+// numbers. The dashboard calls the same function with lifetime totals.
+function findLeak(){ return findLeakIn(stats,evRecords); }
 function renderLeak(){
   const el=$('leak'),msg=findLeak();
   el.innerHTML=msg?('<b>Worth fixing:</b> '+msg):'';
   el.classList.toggle('on',!!msg);
+  syncTips();
+}
+// Both notes now live in the tips modal, so nothing on screen says they are
+// there. The bulb in the Game moves heading is that signal: lit when either
+// note has something, dim when neither does.
+function syncTips(){
+  const any=$('drift').classList.contains('on')||$('leak').classList.contains('on');
+  const box=$('tipsBox');
+  if(box) box.dataset.tips=any?'on':'off';
+  const btn=$('btnTips');
+  if(btn) btn.classList.toggle('has-tips',any);
 }
 
 /* ============================================================
    13i. PERSISTENCE
    ============================================================ */
-const SAVE_KEY='chipaway.session.v1';
+// The payload is unchanged from when it sat at the root of its own key; it is
+// now the `state` slot of a game record, and the running chip total is lifted
+// out to the record itself so the dashboard can read a game's result without
+// parsing its state. games.js owns the storage — this only decides what goes
+// in and what comes back out.
 function saveSession(){
-  try{
-    localStorage.setItem(SAVE_KEY,JSON.stringify({stats:stats,handLog:handLog,evRecords:evRecords,handNo:handNo}));
-  }catch(e){}
+  updateLiveGame({
+    state:{stats:stats,handLog:handLog,evRecords:evRecords,matchResults:matchResults,handNo:handNo},
+    net:sessionNet,
+  });
 }
 function loadSession(){
-  try{
-    const raw=localStorage.getItem(SAVE_KEY);
-    if(!raw) return;
-    const d=JSON.parse(raw);
-    if(d.stats) for(const k in d.stats) stats[k]=d.stats[k];
-    if(d.handLog) d.handLog.forEach(function(h){handLog.push(h);});
-    if(d.evRecords) evRecords=d.evRecords;
-    if(d.handNo) handNo=d.handNo;
-  }catch(e){}
+  const game=getLiveGame();
+  if(!game) return null;
+  const d=game.state||{};
+  if(d.stats) for(const k in d.stats) stats[k]=d.stats[k];
+  if(d.handLog) d.handLog.forEach(function(h){handLog.push(h);});
+  if(d.evRecords) evRecords=d.evRecords;
+  if(d.matchResults) matchResults=d.matchResults;
+  if(d.handNo) handNo=d.handNo;
+  // Games migrated from the old save have no figure to restore, and the trail
+  // is capped at five hands so it cannot be rebuilt — they start the running
+  // total from level rather than from a wrong number.
+  sessionNet=Number(game.net)||0;
+  return game;
 }
-function resetSession(){
-  try{localStorage.removeItem(SAVE_KEY);}catch(e){}
+// Ending is what "start fresh" used to mean. The reload stays because every
+// bit of engine state lives in this closure and the listeners are bound once:
+// there is no route back to a clean table without a fresh page.
+function endCurrentGame(){
+  const game=getLiveGame();
+  if(game) endGame(game.id);
+  openOnReload('home');
   location.reload();
 }
 
@@ -1121,12 +1386,13 @@ function valueCurve(){
   rows.forEach(function(r){ if(r.ev>peak.ev) peak=r; });
   return {e:e,P:P,rows:rows,peak:peak};
 }
-function renderValueBet(){
-  const el=$('valueBet');
+// Returns markup rather than writing it: the sizing curve is an answer, so it
+// is captured with the decision and rendered later in the review.
+function valueBetMarkup(){
   const hero=players[0];
-  if(!handLive||hero.folded||!board.length){el.innerHTML='';return;}
+  if(!handLive||hero.folded||!board.length) return '';
   const v=valueCurve();
-  if(!v||v.e<0.55){el.innerHTML='';return;}   // only meaningful when you are ahead
+  if(!v||v.e<0.55) return '';   // only meaningful when you are ahead
   const mx=Math.max.apply(null,v.rows.map(function(r){return r.ev;}));
   let rows='';
   v.rows.forEach(function(r){
@@ -1142,7 +1408,7 @@ function renderValueBet(){
   } else {
     note='<b>'+pk.label+'</b> ('+pk.B+') extracts most. They continue <b>'+(100*(1-pk.f)).toFixed(0)+'%</b> of the time, so you get paid without pricing them out.';
   }
-  el.innerHTML='<div class="val-box"><div class="val-head">Getting paid \u2014 you have '+(100*v.e).toFixed(0)+'% equity</div>'+
+  return '<div class="val-box"><div class="val-head">Getting paid \u2014 you have '+(100*v.e).toFixed(0)+'% equity</div>'+
     '<table class="val-tab"><tr><th>size</th><th>bet</th><th>they call</th><th>EV</th><th></th></tr>'+rows+'</table>'+
     '<div class="val-note">'+note+'</div></div>';
 }
@@ -1178,12 +1444,61 @@ function renderCounterTips(){
 /* ============================================================
    14. CONTROLS + WIRING
    ============================================================ */
+// The bottom dock has three faces -- before the first hand, during a hand, and
+// after one -- and the engine is what knows which. CSS does the showing; this
+// only ever moves the flag. Nothing is unmounted, so the listeners bound at the
+// bottom of this file stay attached for the life of the session.
+function setPhase(p){
+  const dock=$('actionDock');
+  if(!dock) return;
+  dock.dataset.phase=p;
+  if(p!=='live'){closeRaise();hideCallAmount();}
+}
+// The raise slider is tucked into the dock and only comes out when a raise is
+// being sized, so Raise is a two-step: press to open, press again to commit.
+// The chip figure rides in the tab above the button, never in the label -- a
+// label that grows with the number drags the other two buttons out of shape.
+function syncRaiseLabel(){
+  const h=players[0],v=+$('raiseSlider').value;
+  const b=$('btnRaise');
+  if(b) b.textContent=(h&&v>=h.bet+h.stack)?'All in':'Raise';
+  const amt=$('raiseAmt');
+  if(amt) amt.textContent=v;
+}
+function openRaise(){
+  const dock=$('actionDock');
+  if(dock) dock.dataset.raise='open';
+}
+function closeRaise(){
+  const dock=$('actionDock');
+  if(dock) delete dock.dataset.raise;
+}
+// Same again for the price of calling: the button says Call or Check, the tab
+// above it says how much.
+function showCallAmount(toCall){
+  const dock=$('actionDock');
+  if(!dock) return;
+  if(toCall>0){
+    const amt=$('callAmt');
+    if(amt) amt.textContent=toCall;
+    dock.dataset.call='on';
+  } else delete dock.dataset.call;
+}
+function hideCallAmount(){
+  const dock=$('actionDock');
+  if(dock) delete dock.dataset.call;
+}
+function raiseIsOpen(){
+  const dock=$('actionDock');
+  return !!dock&&dock.dataset.raise==='open';
+}
 function enableHeroControls(){
   heroTurn=true;
   const h=players[0];
   const toCall=Math.min(currentBet-h.bet,h.stack);
   $('btnFold').disabled=false;$('btnCall').disabled=false;
-  $('btnCall').textContent=toCall>0?('Call '+toCall):'Check';
+  $('btnCall').textContent=toCall>0?'Call':'Check';
+  showCallAmount(toCall);
   const minT=Math.min(currentBet+minRaise,h.bet+h.stack),maxT=h.bet+h.stack;
   const sl=$('raiseSlider');
   sl.min=minT;sl.max=maxT;sl.step=5;
@@ -1193,23 +1508,24 @@ function enableHeroControls(){
   const raiseLocked=maxT<=minT||!h.mayRaise;
   sl.disabled=raiseLocked;
   $('btnRaise').disabled=raiseLocked;
-  $('btnRaise').textContent=(+sl.value>=maxT)?'All in':'Raise';
-  $('raiseAmt').textContent=sl.value;
+  closeRaise();syncRaiseLabel();
   $('status').innerHTML='Your move in <b>'+posName(0)+'</b> — '+(toCall>0?('<b>'+toCall+'</b> to call'):'checked to you')+'.';
   renderEquityTab();
   heroSpot=snapshotSpot();
+  captureHeroDetail();
+  paintBubble();
   renderHeroImage();renderRangeGuess();renderCounterTips();renderDrift();
 }
 function disableHeroControls(){
   heroTurn=false;
+  // The nudge is a question about a decision that is now made. Leaving it up
+  // would have it hanging over the table asking about a spot that has gone.
+  paintBubble();
   ['btnFold','btnCall','btnRaise'].forEach(function(id){$(id).disabled=true;});
   $('raiseSlider').disabled=true;
+  closeRaise();hideCallAmount();
 }
-$('raiseSlider').addEventListener('input',function(e){
-  $('raiseAmt').textContent=e.target.value;
-  const h=players[0];
-  $('btnRaise').textContent=(+e.target.value>=h.bet+h.stack)?'All in':'Raise';
-});
+$('raiseSlider').addEventListener('input',syncRaiseLabel);
 document.querySelectorAll('.preset').forEach(function(btn){
   if(!btn.dataset.frac) return;
   btn.addEventListener('click',function(){
@@ -1217,18 +1533,28 @@ document.querySelectorAll('.preset').forEach(function(btn){
     const h=players[0],sl=$('raiseSlider');
     let v=btn.dataset.frac==='max'?(h.bet+h.stack):(currentBet+Math.round(potBefore()*parseFloat(btn.dataset.frac)));
     v=Math.max(+sl.min,Math.min(+sl.max,v));
-    sl.value=v;$('raiseAmt').textContent=v;
-    $('btnRaise').textContent=(v>=h.bet+h.stack)?'All in':'Raise';
+    sl.value=v;syncRaiseLabel();
   });
 });
 $('btnFold').addEventListener('click',heroFold);
 $('btnCall').addEventListener('click',heroCall);
-$('btnRaise').addEventListener('click',heroRaise);
-$('btnDeal').addEventListener('click',function(){$('btnDeal').disabled=true;$('btnDeal').textContent='Hand in play';startHand();});
-$('btnRevealEq').addEventListener('click',showCoach);
+$('btnRaise').addEventListener('click',function(){
+  if(!heroTurn) return;
+  if(raiseIsOpen()) heroRaise(); else openRaise();
+});
+function dealNextHand(){setPhase('live');startHand();}
+$('btnDeal').addEventListener('click',dealNextHand);
+$('btnNewHand').addEventListener('click',dealNextHand);
+// Review turns the result card back into the move list. Which face the panel
+// is showing is engine state -- it flips on its own at the start and end of
+// every hand -- so the button belongs here with the rest of the dock.
+$('btnReview').addEventListener('click',function(){setPanelView('moves');});
 $('btnSkipGuess').addEventListener('click',function(){concludeHand(null);});
 $('btnClassify').addEventListener('click',classify);
-$('btnReset').addEventListener('click',function(){ if(confirm('Clear all saved stats and start fresh?')) resetSession(); });
+// This used to wipe every stat you had. Now that games are kept, the same
+// button files the current one away and drops you back on the dashboard —
+// clearing history outright is a separate, clearly-labelled control there.
+$('btnReset').addEventListener('click',function(){ if(confirm('End this game and return to your dashboard?')) endCurrentGame(); });
 function buildSetupRows(){
   const wrap=$('setupRows');wrap.innerHTML='';
   SEAT_NAMES.forEach(function(nm,i){
@@ -1242,16 +1568,30 @@ function buildSetupRows(){
     sel.addEventListener('change',function(e){
       const i=+e.target.dataset.seat;
       seatConfig[i]=e.target.value==='random'?PROFILE_KEYS[Math.floor(Math.random()*PROFILE_KEYS.length)]:e.target.value;
-      players[i+1].profile=seatConfig[i];paint();
+      players[i+1].profile=seatConfig[i];paint();saveSetup();
     });
   });
+}
+// Settings are the only place a game's setup can be changed now that Play deals
+// straight away, so a change made there has to outlive the tab. Every handler
+// below writes the whole setup back to the live game record, which applySetup
+// reads on the next boot.
+function saveSetup(){
+  updateLiveGame({setup:{
+    pace:String(SPEED),
+    showdownGuess:guessEnabled,
+    rangeGuess:rgOn,
+    seats:seatConfig.slice(),
+  }});
 }
 $('btnRandom').addEventListener('click',function(){
   randomSeats();
   players.forEach(function(p,i){if(i>0)p.profile=seatConfig[i-1];});
   document.querySelectorAll('#setupRows select').forEach(function(s){s.value='random';});
-  showProfiles=false;$('btnRevealProfiles').textContent='Show styles';paint();
+  showProfiles=false;$('btnRevealProfiles').textContent='Show styles';paint();saveSetup();
 });
+// Revealing styles is a view of the table, not a property of it, so it stays
+// out of the saved setup -- coming back should hide them again.
 $('btnRevealProfiles').addEventListener('click',function(){
   showProfiles=!showProfiles;
   $('btnRevealProfiles').textContent=showProfiles?'Hide styles':'Show styles';paint();
@@ -1260,13 +1600,13 @@ document.querySelectorAll('.speed-btn').forEach(function(b){
   if(!b.dataset.speed) return;
   b.addEventListener('click',function(){
     document.querySelectorAll('.speed-btn[data-speed]').forEach(function(x){x.classList.remove('on');});
-    b.classList.add('on');SPEED=parseFloat(b.dataset.speed);
+    b.classList.add('on');SPEED=parseFloat(b.dataset.speed);saveSetup();
   });
 });
-$('guessOn').addEventListener('click',function(){guessEnabled=true;$('guessOn').classList.add('on');$('guessOff').classList.remove('on');});
-$('guessOff').addEventListener('click',function(){guessEnabled=false;$('guessOff').classList.add('on');$('guessOn').classList.remove('on');});
-$('rgOn').addEventListener('click',function(){rgOn=true;$('rgOn').classList.add('on');$('rgOff').classList.remove('on');renderRangeGuess();});
-$('rgOff').addEventListener('click',function(){rgOn=false;$('rgOff').classList.add('on');$('rgOn').classList.remove('on');$('rangeGuessWrap').innerHTML='';});
+$('guessOn').addEventListener('click',function(){guessEnabled=true;$('guessOn').classList.add('on');$('guessOff').classList.remove('on');saveSetup();});
+$('guessOff').addEventListener('click',function(){guessEnabled=false;$('guessOff').classList.add('on');$('guessOn').classList.remove('on');saveSetup();});
+$('rgOn').addEventListener('click',function(){rgOn=true;$('rgOn').classList.add('on');$('rgOff').classList.remove('on');renderRangeGuess();saveSetup();});
+$('rgOff').addEventListener('click',function(){rgOn=false;$('rgOff').classList.add('on');$('rgOn').classList.remove('on');$('rangeGuessWrap').innerHTML='';saveSetup();});
 
 /* ---- build stamp + feedback ---- */
 const BUILD='v7';
@@ -1289,8 +1629,90 @@ $('fbForm').addEventListener('submit',function(e){
     });
 });
 
+// A game's setup is fixed when it is created, so the table you come back to is
+// the table you left — not a fresh random draw on every reload. Runs after the
+// setup rows are built, because it writes the chosen values back into them.
+function applySetup(setup){
+  if(!setup) return;
+  if(Array.isArray(setup.seats)&&setup.seats.length===SEAT_NAMES.length){
+    seatConfig=setup.seats.slice();
+    players.forEach(function(p,i){if(i>0)p.profile=seatConfig[i-1];});
+    $('setupRows').querySelectorAll('select').forEach(function(sel,i){
+      if(seatConfig[i]) sel.value=seatConfig[i];
+    });
+  }
+  if(setup.pace){
+    SPEED=parseFloat(setup.pace)||SPEED;
+    document.querySelectorAll('.speed-btn[data-speed]').forEach(function(b){
+      b.classList.toggle('on',b.dataset.speed===setup.pace);
+    });
+  }
+  guessEnabled=!!setup.showdownGuess;
+  $('guessOn').classList.toggle('on',guessEnabled);
+  $('guessOff').classList.toggle('on',!guessEnabled);
+  rgOn=!!setup.rangeGuess;
+  $('rgOn').classList.toggle('on',rgOn);
+  $('rgOff').classList.toggle('on',!rgOn);
+}
+
+// Before anything reads storage: a player mid-session when games shipped keeps
+// their stats and hand log rather than losing them to a key rename.
+migrateLegacySession();
 randomSeats();initPlayers();buildSeats();buildSetupRows();
-loadSession();
-buildRangeIndex();hideCoach();clearEquityTab();renderStats();renderEvCharts();renderLeak();renderDrift();paint();
+const liveGame=loadSession();
+applySetup(liveGame&&liveGame.setup);
+// A game created by pressing Play has no seats recorded yet, only the random
+// draw this boot just made. Writing it down now is what stops the table being
+// reshuffled under you on the next reload.
+if(liveGame&&!(liveGame.setup&&liveGame.setup.seats&&liveGame.setup.seats.length)) saveSetup();
+renderMatchResults();renderSessionNet();
+buildRangeIndex();paintBubble();clearEquityTab();renderStats();renderEvCharts();renderLeak();renderDrift();paint();
 $('metaLine').textContent="6-max · no-limit hold'em · "+SB+"/"+BB+" · "+START_STACK+" stacks";
+
+/* ============================================================
+   14. REPLAY — drawing a hand that is already over
+
+   The history screen owns which hand and which step; this owns the felt. It is
+   a controller, not a renderer: it reconstructs a snapshot and hands it to the
+   same paint() the live table uses, so a replayed hand and a live one are
+   drawn by identical code and cannot look different.
+
+   Replay is only entered between hands. The hand loop advances on chained
+   setTimeouts, and a timer firing mid-replay would repaint live state over the
+   top; refusing to start while a hand is live is a cheaper and more honest
+   guard than trying to cancel timers that are already queued.
+   ============================================================ */
+let replayHand=null;
+const api={
+  // False means a hand is in progress, and the caller should say so rather
+  // than silently doing nothing.
+  canReplay:function(){return !handLive;},
+  isReplaying:function(){return !!replayHand;},
+  enter:function(hand){
+    if(handLive||!hand) return false;
+    replayHand=hand;
+    return true;
+  },
+  // Steps are indexes into the recorded event log. -1 is the table before the
+  // cards are out.
+  stepCount:function(){return replayHand?stepCount(replayHand):0;},
+  visibleSteps:function(){return replayHand?visibleSteps(replayHand):[];},
+  show:function(n){
+    if(!replayHand) return;
+    const snap=snapshotAt(replayHand,n);
+    snap.replay=true;
+    paint(snap);
+  },
+  exit:function(){
+    replayHand=null;
+    // The board signature cache was last written by a replayed board, so the
+    // live board has to be treated as changed or the felt keeps the replay's
+    // cards.
+    lastBoardSig='';
+    seatRefs.forEach(function(r){r.sig='';});
+    paint();
+  },
+};
+window.__chipAwayApi=api;
+return api;
 }
