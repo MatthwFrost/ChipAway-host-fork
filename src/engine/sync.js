@@ -20,6 +20,12 @@ import { listGames, mergeGames } from './games.js';
 import { loadHands, mergeHands } from './handStore.js';
 
 const iso = function (ms) { return ms ? new Date(ms).toISOString() : null; };
+// created_at (games) and started_at (hands) are NOT NULL columns, so a
+// missing or falsy (e.g. 0) input must not collapse to null the way iso()
+// does for the nullable ended_at columns. Fall back to "now" -- the record
+// is being synced at this instant, so it is a reasonable stand-in for an
+// unknown start time and keeps the row insertable rather than rejected.
+const isoRequired = function (v) { return iso(v) || new Date().toISOString(); };
 const ms = function (s) { return s ? new Date(s).getTime() : null; };
 
 const evCostOf = function (hand) {
@@ -35,7 +41,7 @@ export function toHandRow(hand, userId) {
     user_id: userId,
     game_id: hand.gameId || null,
     hand_no: hand.handNo || 0,
-    started_at: iso(hand.startedAt),
+    started_at: isoRequired(hand.startedAt),
     ended_at: iso(hand.endedAt),
     schema_version: hand.v,
     net: result.net || 0,
@@ -54,7 +60,7 @@ export function toGameRow(game, userId) {
   return {
     id: game.id,
     user_id: userId,
-    created_at: iso(game.createdAt),
+    created_at: isoRequired(game.createdAt),
     ended_at: iso(game.endedAt),
     status: game.status === 'live' ? 'live' : 'ended',
     setup: game.setup || {},
@@ -86,9 +92,17 @@ async function requireUser() {
   return { user: user, error: null };
 }
 
-export async function push() {
-  const { user, error } = await requireUser();
-  if (error) return { games: 0, hands: 0, error: error };
+// `presetUser` lets syncNow() resolve the user once and hand it down to
+// pull()/push() instead of each re-validating the token with the auth
+// server. Called with no argument, push() resolves its own user exactly as
+// before, so it still works standalone.
+export async function push(presetUser) {
+  let user = presetUser;
+  if (!user) {
+    const required = await requireUser();
+    if (required.error) return { games: 0, hands: 0, error: required.error };
+    user = required.user;
+  }
 
   const games = listGames();
   const hands = loadHands();
@@ -114,9 +128,12 @@ export async function push() {
   return { games: pushedGames, hands: pushedHands, error: null };
 }
 
-export async function pull() {
-  const { error } = await requireUser();
-  if (error) return { games: 0, hands: 0, error: error };
+// See push() above for `presetUser`.
+export async function pull(presetUser) {
+  if (!presetUser) {
+    const required = await requireUser();
+    if (required.error) return { games: 0, hands: 0, error: required.error };
+  }
 
   const gameRes = await supabase.from('games').select('*');
   if (gameRes.error) return { games: 0, hands: 0, error: gameRes.error.message };
@@ -132,10 +149,10 @@ export async function pull() {
 /* Pull before push, so anything this browser has never seen is folded in
    before its own state is sent back up as the record of what exists. */
 export async function syncNow() {
-  const { error } = await requireUser();
+  const { user, error } = await requireUser();
   if (error) return { pushed: null, pulled: null, error: error };
-  const pulled = await pull();
+  const pulled = await pull(user);
   if (pulled.error) return { pushed: null, pulled: pulled, error: pulled.error };
-  const pushed = await push();
+  const pushed = await push(user);
   return { pushed: pushed, pulled: pulled, error: pushed.error };
 }

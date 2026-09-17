@@ -70,6 +70,18 @@ describe('row mapping', () => {
     expect(sync.fromHandRow(sync.toHandRow(HAND, 'user-1'))).toEqual(HAND);
   });
 
+  test('a hand row falls back to a valid started_at when startedAt is missing or zero', () => {
+    const missing = sync.toHandRow({ ...HAND, startedAt: undefined }, 'user-1');
+    expect(missing.started_at).toEqual(expect.any(String));
+    expect(() => new Date(missing.started_at).toISOString()).not.toThrow();
+    expect(missing.ended_at).toBe(new Date(1700000060000).toISOString());
+
+    const zero = sync.toHandRow({ ...HAND, startedAt: 0, endedAt: null }, 'user-1');
+    expect(zero.started_at).toEqual(expect.any(String));
+    expect(zero.started_at).not.toBeNull();
+    expect(zero.ended_at).toBeNull();
+  });
+
   test('round-trips a game back out of a row unchanged', () => {
     const back = sync.fromGameRow(sync.toGameRow(GAME, 'user-1'));
     expect(back.id).toBe(GAME.id);
@@ -79,6 +91,18 @@ describe('row mapping', () => {
     expect(back.net).toBe(30);
     expect(back.setup).toEqual(GAME.setup);
     expect(back.state).toEqual(GAME.state);
+  });
+
+  test('a game row falls back to a valid created_at when createdAt is missing or zero', () => {
+    const missing = sync.toGameRow({ ...GAME, createdAt: undefined }, 'user-1');
+    expect(missing.created_at).toEqual(expect.any(String));
+    expect(() => new Date(missing.created_at).toISOString()).not.toThrow();
+    expect(missing.ended_at).toBeNull();
+
+    const zero = sync.toGameRow({ ...GAME, createdAt: 0 }, 'user-1');
+    expect(zero.created_at).toEqual(expect.any(String));
+    expect(zero.created_at).not.toBeNull();
+    expect(zero.ended_at).toBeNull();
   });
 });
 
@@ -132,5 +156,15 @@ describe('syncNow', () => {
     const res = await sync.syncNow();
     expect(res.error).toBe('Not signed in.');
     expect(upsert).not.toHaveBeenCalled();
+  });
+
+  test('resolves the user once and passes it down to pull() and push(), not three times', async () => {
+    localStorage.setItem('chipaway.games.v1', JSON.stringify({ version: 1, liveId: 'g_1', games: [GAME] }));
+    localStorage.setItem('chipaway.hands.v1', JSON.stringify([HAND]));
+    const auth = await import('./auth.js');
+    auth.getUser.mockResolvedValue({ id: 'user-1' });
+    const res = await sync.syncNow();
+    expect(res.error).toBeNull();
+    expect(auth.getUser).toHaveBeenCalledTimes(1);
   });
 });
