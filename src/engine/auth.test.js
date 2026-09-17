@@ -51,6 +51,20 @@ describe('sign in', () => {
     expect(res.user).toBeNull();
     expect(res.error).toBe("Can't reach the server. Check your connection and try again.");
   });
+
+  test('clears a stale guest flag on success, so it cannot wave the player past the gate later', async () => {
+    mockAuth.signInWithPassword.mockResolvedValue({ data: { user: { id: 'u1', email: 'a@b.com' } }, error: null });
+    auth.continueAsGuest();
+    await auth.signIn('a@b.com', 'pw');
+    expect(auth.isGuest()).toBe(false);
+  });
+
+  test('leaves the guest flag alone on a failed sign-in', async () => {
+    mockAuth.signInWithPassword.mockResolvedValue({ data: { user: null }, error: { message: 'Invalid login credentials' } });
+    auth.continueAsGuest();
+    await auth.signIn('a@b.com', 'wrong');
+    expect(auth.isGuest()).toBe(true);
+  });
 });
 
 describe('sign up', () => {
@@ -80,6 +94,21 @@ describe('sign up', () => {
     expect(res.user).toBeNull();
     expect(res.error).toBe("Can't reach the server. Check your connection and try again.");
     expect(res.needsConfirmation).toBe(false);
+  });
+
+  test('clears a stale guest flag when a session comes back immediately', async () => {
+    mockAuth.signUp.mockResolvedValue({ data: { user: { id: 'u2' }, session: { access_token: 't' } }, error: null });
+    auth.continueAsGuest();
+    await auth.signUp('a@b.com', 'password123');
+    expect(auth.isGuest()).toBe(false);
+  });
+
+  test('leaves the guest flag alone when confirmation is still pending -- there is no session yet', async () => {
+    mockAuth.signUp.mockResolvedValue({ data: { user: { id: 'u2' }, session: null }, error: null });
+    auth.continueAsGuest();
+    const res = await auth.signUp('a@b.com', 'password123');
+    expect(res.needsConfirmation).toBe(true);
+    expect(auth.isGuest()).toBe(true);
   });
 });
 

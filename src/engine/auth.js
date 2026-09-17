@@ -55,7 +55,12 @@ export async function signIn(email, password) {
   if (!isConfigured) return { user: null, error: NO_BACKEND };
   try {
     const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    return { user: error ? null : (data && data.user) || null, error: friendly(error) };
+    const user = error ? null : (data && data.user) || null;
+    // A stale guest flag must not survive a real sign-in: skipping the gate
+    // for the wrong reason once the session it was standing in for is gone
+    // (expired, revoked elsewhere) is exactly the failure this closes.
+    if (user) endGuest();
+    return { user: user, error: friendly(error) };
   } catch (e) {
     return { user: null, error: NETWORK_ERROR };
   }
@@ -73,7 +78,14 @@ export async function signUp(email, password) {
     const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
     // A user with no session means Supabase is waiting on a confirmation email.
     const needsConfirmation = Boolean(!error && data && data.user && !data.session);
-    return { user: error ? null : (data && data.user) || null, error: friendly(error), needsConfirmation };
+    const user = error ? null : (data && data.user) || null;
+    // Only clear the guest flag once there is an actual session to replace it
+    // with. needsConfirmation means signUp succeeded but nobody is signed in
+    // yet -- dropping the guest bypass here, before the player has finished
+    // confirming, would strand them at the gate with no session and no guest
+    // escape hatch until they check their email.
+    if (user && !needsConfirmation) endGuest();
+    return { user: user, error: friendly(error), needsConfirmation };
   } catch (e) {
     return { user: null, error: NETWORK_ERROR, needsConfirmation: false };
   }
