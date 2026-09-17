@@ -55,11 +55,22 @@ export function App() {
   // stable getter so consumers cannot accidentally close over the null it
   // holds before the layout effect runs.
   const engineRef = useRef(null);
+  const engineInitedRef = useRef(false);
   const getEngine = useCallback(() => engineRef.current, []);
 
+  // True while the sign-in gate (or its pre-first-check stub) is on screen
+  // instead of the shell. The table DOM that initializePokerTrainer binds to
+  // by id only exists once this is false, so the init effect below must not
+  // run while it is true. Derived once here rather than re-checked in each
+  // early return so the effect and the render path can never drift apart.
+  const gated = !guest && (authState === 'checking' || !user);
+
   useLayoutEffect(() => {
+    if (gated) return; // no table DOM yet -- initializing now would throw
+    if (engineInitedRef.current) return; // already initialised, do not repeat
+    engineInitedRef.current = true;
     engineRef.current = initializePokerTrainer();
-  }, []);
+  }, [gated]);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,19 +158,17 @@ export function App() {
 
   // A guest already opted out of an account, so there is nothing worth
   // waiting on the network for -- skip the checking gate below entirely.
-  if (!guest) {
+  if (gated) {
     // Nothing at all until the first check resolves -- see the comment on
     // authState above.
     if (authState === 'checking') return <div className="shell" data-screen="home" />;
 
-    if (!user) {
-      return (
-        <SignInScreen
-          onSignedIn={(u) => { setUser(u); setAuthState('ready'); syncNow(); }}
-          onGuest={() => setGuest(true)}
-        />
-      );
-    }
+    return (
+      <SignInScreen
+        onSignedIn={(u) => { setUser(u); setAuthState('ready'); syncNow(); }}
+        onGuest={() => setGuest(true)}
+      />
+    );
   }
 
   return (
