@@ -9,7 +9,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { HomeScreen } from './components/HomeScreen';
 import { HistoryPanel } from './components/HistoryPanel';
 import { getUser, isGuest, onAuthChange, signOut } from './engine/auth';
-import { syncNow } from './engine/sync';
+import { push, syncNow } from './engine/sync';
 import { SignInScreen } from './components/SignInScreen';
 
 // Both screens stay mounted and a class decides which is visible. Unmounting
@@ -91,6 +91,22 @@ export function App() {
     setUser(u);
     setAuthState('ready');
   }), []);
+
+  // The engine files each hand to localStorage synchronously and cannot await
+  // a network call mid-hand. So the push rides along afterwards: whenever the
+  // tab is hidden or closed, and once a minute while it is open. Losing a push
+  // costs nothing -- the next one re-sends everything local that the server
+  // does not already have.
+  useEffect(() => {
+    if (!user) return undefined;
+    const onHide = () => { if (document.visibilityState === 'hidden') push(); };
+    const timer = setInterval(push, 60000);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [user]);
 
   const doSignOut = useCallback(async () => {
     await signOut();

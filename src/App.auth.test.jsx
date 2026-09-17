@@ -12,6 +12,7 @@ vi.mock('./engine/auth.js', () => ({
 }));
 vi.mock('./engine/sync.js', () => ({
   syncNow: vi.fn(async () => ({ pushed: null, pulled: null, error: null })),
+  push: vi.fn(async () => ({ games: 0, hands: 0, error: null })),
 }));
 // The engine paints into DOM nodes this test does not care about, and
 // initialises once per page. Stubbing it keeps the gate test about the gate.
@@ -75,6 +76,16 @@ describe('auth gate', () => {
     auth.getUser.mockResolvedValue({ id: 'u1', email: 'matty@example.com' });
     render(<App />);
     expect(await screen.findByText('matty@example.com')).toBeInTheDocument();
+  });
+
+  test('does not start the background push for a guest', async () => {
+    auth.getUser.mockResolvedValue(null);
+    auth.isGuest.mockReturnValue(true);
+    const sync2 = await import('./engine/sync.js');
+    render(<App />);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull());
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(sync2.push).not.toHaveBeenCalled();
   });
 });
 
