@@ -360,7 +360,7 @@ export function App() {
 
       <main className="board-grid">
         <div className="table-col">
-          <PokerTable />
+          <PokerTable user={user} displayName={displayName} />
         </div>
         <SidePanel onOpenSettings={() => setSettingsOpen(true)} />
         {/* Shares the felt with Play rather than drawing its own table: the

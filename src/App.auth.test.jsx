@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 vi.mock('./engine/auth.js', () => ({
   getUser: vi.fn(),
@@ -27,6 +27,14 @@ vi.mock('./engine/initializePokerTrainer', () => ({
     stepCount: () => 0, visibleSteps: () => [], show: () => {}, exit: () => {},
   })),
 }));
+
+// The player's name now shows in BOTH the rail and the table's player bar --
+// that is the point of sharing one label -- so a bare text query matches twice.
+// Scope identity assertions to the rail.
+const rail = () => within(screen.getByRole('navigation', { name: 'Main' }));
+// The rail does not exist while the gate is up, so waiting for the text has to
+// start by waiting for the rail itself.
+const findInRail = async (text) => within(await screen.findByRole('navigation', { name: 'Main' })).findByText(text);
 
 const auth = await import('./engine/auth.js');
 const sync = await import('./engine/sync.js');
@@ -83,7 +91,7 @@ describe('auth gate', () => {
   test('shows the signed-in email in the rail', async () => {
     auth.getUser.mockResolvedValue({ id: 'u1', email: 'matty@example.com' });
     render(<App />);
-    expect(await screen.findByText('matty@example.com')).toBeInTheDocument();
+    expect(await findInRail('matty@example.com')).toBeInTheDocument();
   });
 
   test('shows the email immediately, then upgrades to the display name once it loads', async () => {
@@ -92,12 +100,12 @@ describe('auth gate', () => {
     auth.getDisplayName.mockReturnValue(new Promise((resolve) => { resolveName = resolve; }));
     render(<App />);
 
-    expect(await screen.findByText('matty@example.com')).toBeInTheDocument();
+    expect(await findInRail('matty@example.com')).toBeInTheDocument();
 
     await act(async () => { resolveName('Matty'); });
 
-    expect(screen.getByText('Matty')).toBeInTheDocument();
-    expect(screen.queryByText('matty@example.com')).not.toBeInTheDocument();
+    expect(rail().getByText('Matty')).toBeInTheDocument();
+    expect(rail().queryByText('matty@example.com')).not.toBeInTheDocument();
   });
 
   test('does not fetch a display name for a guest', async () => {
@@ -138,7 +146,7 @@ describe('auth gate', () => {
     // Waiting for the absence of the Sign in button would pass against the
     // pre-check stub, which has no button either -- wait for the signed-in
     // rail instead, which only appears once user state has actually landed.
-    await screen.findByText('a@b.com');
+    await findInRail('a@b.com');
     hideTab();
     await waitFor(() => expect(sync.push).toHaveBeenCalled());
   });
@@ -215,7 +223,7 @@ describe('local data ownership across accounts (Critical 1)', () => {
     seedLocalData();
     auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
     render(<App />);
-    await screen.findByText('a@b.com');
+    await findInRail('a@b.com');
 
     fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
 
@@ -235,7 +243,7 @@ describe('local data ownership across accounts (Critical 1)', () => {
     auth.getUser.mockResolvedValue({ id: 'u2', email: 'b@b.com' });
 
     render(<App />);
-    await screen.findByText('b@b.com');
+    await findInRail('b@b.com');
 
     expect(localStorage.getItem('chipaway.games.v1')).toBeNull();
     expect(localStorage.getItem('chipaway.hands.v1')).toBeNull();
@@ -249,7 +257,7 @@ describe('local data ownership across accounts (Critical 1)', () => {
     auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
 
     render(<App />);
-    await screen.findByText('a@b.com');
+    await findInRail('a@b.com');
 
     expect(localStorage.getItem('chipaway.games.v1')).not.toBeNull();
     expect(localStorage.getItem('chipaway.hands.v1')).not.toBeNull();
@@ -275,7 +283,7 @@ describe('reload on mid-session loss (Critical 3)', () => {
   test('reloads when a session is lost after a user had been established', async () => {
     auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
     render(<App />);
-    await screen.findByText('a@b.com');
+    await findInRail('a@b.com');
 
     const onChange = auth.onAuthChange.mock.calls[0][0];
     act(() => { onChange(null); });
@@ -319,7 +327,7 @@ describe('reload after a sync pulls in something new (Important 4)', () => {
     auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
     sync.syncNow.mockResolvedValue({ pushed: { games: 0, hands: 0, error: null }, pulled: { games: 1, hands: 0, error: null }, error: null });
     render(<App />);
-    await screen.findByText('a@b.com');
+    await findInRail('a@b.com');
     await waitFor(() => expect(reload).toHaveBeenCalled());
   });
 
@@ -327,7 +335,7 @@ describe('reload after a sync pulls in something new (Important 4)', () => {
     auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
     sync.syncNow.mockResolvedValue({ pushed: { games: 0, hands: 0, error: null }, pulled: { games: 0, hands: 0, error: null }, error: null });
     render(<App />);
-    await screen.findByText('a@b.com');
+    await findInRail('a@b.com');
     // A tick for the syncNow().then(...) microtask to have had every chance
     // to run before asserting its absence.
     await Promise.resolve();
@@ -359,7 +367,7 @@ describe('reload after a sync pulls in something new (Important 4)', () => {
     auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
     sync.syncNow.mockResolvedValue({ pushed: { games: 0, hands: 0, error: null }, pulled: { games: 1, hands: 0, error: null }, error: null });
     render(<App />);
-    await screen.findByText('a@b.com');
+    await findInRail('a@b.com');
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     await Promise.resolve();
     expect(reload).toHaveBeenCalledTimes(1);
@@ -381,7 +389,7 @@ describe('a late getUser() null does not clear an already-established user (Impo
     // (INITIAL_SESSION comes from local storage, no network round trip).
     const onChange = auth.onAuthChange.mock.calls[0][0];
     act(() => { onChange({ id: 'u1', email: 'a@b.com' }); });
-    await screen.findByText('a@b.com');
+    await findInRail('a@b.com');
 
     // The slower, network-revalidating getUser() now resolves null -- a
     // transport failure or a slow response landing after the fact.
@@ -389,7 +397,7 @@ describe('a late getUser() null does not clear an already-established user (Impo
 
     // Still signed in: a null from getUser() must not overwrite a user the
     // subscription already established.
-    expect(screen.getByText('a@b.com')).toBeInTheDocument();
+    expect(rail().getByText('a@b.com')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
   });
 

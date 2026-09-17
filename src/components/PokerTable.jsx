@@ -1,4 +1,10 @@
-export function PokerTable() {
+import { avatarInitial, profileLabel } from './profileLabel';
+
+export function PokerTable({ user = null, displayName = null }) {
+  // Same label and same initial as the nav rail -- see profileLabel.js. The
+  // two used to be independent, and the avatar here was a hardcoded letter, so
+  // any player who was not called Matty got somebody else's name on the felt.
+  const label = profileLabel(user, displayName);
   return (
     <>
       <section className="table-outer" aria-label="Poker table">
@@ -15,9 +21,9 @@ export function PokerTable() {
         </div>
       </section>
       <div className="table-player-bar" role="region" aria-label="Player profile and match results">
-        <div className="table-player-avatar" aria-hidden="true">M</div>
+        <div className="table-player-avatar" aria-hidden="true">{avatarInitial(label)}</div>
         <div className="table-player-copy">
-          <div className="table-player-name">Matty Frost <span aria-label="United Kingdom">🇬🇧</span></div>
+          <div className="table-player-name">{label} <span aria-label="United Kingdom">🇬🇧</span></div>
           {/* Chips won or lost across the whole session, counted from the
               starting stack. The engine rewrites it after every hand. */}
           <div className="table-player-earned" id="sessionNet" aria-label="Even for the game">

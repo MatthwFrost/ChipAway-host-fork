@@ -26,7 +26,10 @@ test('shows the player profile and empty match result trail beneath the table', 
 
   const profile = screen.getByRole('region', { name: 'Player profile and match results' });
   expect(profile).toBeInTheDocument();
-  expect(profile).toHaveTextContent('Matty Frost');
+  // This file runs as a guest (see the guest flag in setup), and the bar now
+  // names whoever is actually playing rather than a hardcoded 'Matty Frost' --
+  // so for a guest it says Guest, matching the nav rail.
+  expect(profile).toHaveTextContent('Guest');
   expect(document.getElementById('matchScore')).toHaveTextContent('0-0');
   expect(document.getElementById('matchResults')).toHaveAttribute('aria-label', 'No hands completed yet');
   // The session ledger sits under the name and reads level before the first deal

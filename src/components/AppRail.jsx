@@ -7,11 +7,12 @@
 // player it signs them out; for a guest it is the only route back to the
 // sign-in screen -- "Skip for now" is otherwise a one-way door.
 
+import { avatarInitial, profileLabel } from './profileLabel';
+
 export function AppRail({ screen = 'table', onNavigate = () => {}, user = null, displayName = null, onSignOut = () => {}, onLeaveGuest = () => {} }) {
-  // displayName wins when it has arrived; the email is what is available
-  // immediately (it is on the user object from the very first render), and
-  // 'Guest' is the only label a guest -- who has no profile row -- ever gets.
-  const profileLabel = user ? (displayName || user.email || 'Guest') : 'Guest';
+  // Shared with the table's player bar so the two identities cannot drift --
+  // see profileLabel.js.
+  const label = profileLabel(user, displayName);
   return (
     <nav className="app-rail" aria-label="Main">
       <div className="app-rail-brand">
@@ -91,10 +92,10 @@ export function AppRail({ screen = 'table', onNavigate = () => {}, user = null, 
           "Skip for now" would otherwise be a one-way door. */}
       <button type="button" className="rail-profile" onClick={user ? onSignOut : onLeaveGuest}>
         <span className="rail-avatar" aria-hidden="true">
-          {profileLabel[0].toUpperCase()}
+          {avatarInitial(label)}
         </span>
         <span className="rail-profile-text">
-          <span className="rail-profile-name">{profileLabel}</span>
+          <span className="rail-profile-name">{label}</span>
           <span className="rail-profile-meta">{user ? 'Sign out' : 'Sign in or create an account'}</span>
         </span>
       </button>

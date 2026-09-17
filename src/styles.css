@@ -229,18 +229,27 @@ body {
   transform: none
 }
 
-.rail-avatar {
+/* One profile picture, two places. The rail and the table's player bar show
+   the same person, so they share the same treatment -- grouped in a single
+   rule rather than described twice, because two copies drift. Only the size
+   differs, set alongside each widget. */
+.rail-avatar,
+.table-player-avatar {
   flex: none;
   display: grid;
   place-items: center;
+  border-radius: 6px;
+  background: linear-gradient(145deg, #526A86, #263847);
+  color: var(--cream);
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .3)
+}
+
+.rail-avatar {
   width: 30px;
   height: 30px;
-  border-radius: 50%;
-  background: var(--rail-hi);
-  color: var(--cream-dim);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1
+  font-size: 13px
 }
 
 .rail-profile-text {
@@ -365,18 +374,11 @@ body {
   color: var(--cream-dim)
 }
 
+/* Shape, colour and shadow are shared with .rail-avatar -- see that rule. */
 .table-player-avatar {
-  display: grid;
-  place-items: center;
   width: 38px;
   height: 38px;
-  flex: none;
-  border-radius: 6px;
-  background: linear-gradient(145deg, #526A86, #263847);
-  color: var(--cream);
-  font-size: 16px;
-  font-weight: 700;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, .3)
+  font-size: 16px
 }
 
 .table-player-copy {
