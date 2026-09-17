@@ -228,15 +228,24 @@ export function migrateLegacySession() {
 /* Fold a batch of games in from the cloud. The LIVE game is never overwritten
    -- it is the sitting in front of the player right now, so any remote copy of
    it is by definition staler. Ended games take the remote version, which is
-   what makes a game finished on another machine show up here. Returns how many
-   rows were added or updated. */
+   what makes a game finished on another machine show up here.
+
+   Returns how many rows were newly added -- deliberately NOT counting
+   updates to games already held locally. An ended game gets Object.assign'd
+   from its remote copy on every pull whether or not anything actually
+   changed, so a count that included updates would be non-zero on every
+   re-pull forever. Callers that need to know "did syncing just surface
+   something the player has not seen yet" (e.g. reloading to show it) can
+   rely on the added count settling at 0 once every remote id has been seen
+   locally once; a count that includes updates cannot make that promise. */
 export function mergeGames(list) {
   if (!Array.isArray(list) || !list.length) return 0;
   const store = loadStore();
   const byId = {};
   store.games.forEach(function (g) { byId[g.id] = g; });
 
-  let touched = 0;
+  let added = 0;
+  let updated = 0;
   list.forEach((remote) => {
     if (!remote || !remote.id) return;
     if (remote.id === store.liveId) return;
@@ -244,12 +253,12 @@ export function mergeGames(list) {
     if (!local) {
       store.games.push(remote);
       byId[remote.id] = remote;
-      touched += 1;
+      added += 1;
       return;
     }
     Object.assign(local, remote);
-    touched += 1;
+    updated += 1;
   });
-  if (touched) saveStore(store);
-  return touched;
+  if (added || updated) saveStore(store);
+  return added;
 }

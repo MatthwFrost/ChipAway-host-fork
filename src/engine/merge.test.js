@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { clearHands, loadHands, mergeHands, saveHand } from './handStore.js';
+import { clearHands, loadHands, MAX_HANDS, mergeHands, saveHand } from './handStore.js';
 import { clearAllGames, listGames, loadStore, mergeGames, saveStore } from './games.js';
 import { HAND_SCHEMA_VERSION } from './handRecorder.js';
 
@@ -74,6 +74,22 @@ describe('mergeHands', () => {
     // only the hand that was already there.
     expect(loadHands().map((h) => h.handNo)).toEqual([1]);
   });
+
+  test('does not count a merged hand that the MAX_HANDS trim immediately evicts', () => {
+    // Fill local storage to the cap with hands newer than the one about to be
+    // merged in, so the merged one is the oldest of the combined set and is
+    // the one shifted off by the trim.
+    for (let i = 0; i < MAX_HANDS; i++) {
+      saveHand(hand(i + 1, { startedAt: 2000000000000 + i }));
+    }
+    const older = hand(MAX_HANDS + 1, { startedAt: 1 });
+    // The merge step itself would have counted this as added, but the trim
+    // that runs right after removes it again -- the returned count must
+    // reflect what is actually in storage, not what was added before the trim.
+    expect(mergeHands([older])).toBe(0);
+    expect(loadHands()).toHaveLength(MAX_HANDS);
+    expect(loadHands().some((h) => h.id === older.id)).toBe(false);
+  });
 });
 
 describe('mergeGames', () => {
@@ -98,5 +114,16 @@ describe('mergeGames', () => {
     saveStore({ version: 1, liveId: null, games: [game('g_1', { net: 10 })] });
     mergeGames([game('g_1', { net: 99 })]);
     expect(listGames().find((g) => g.id === 'g_1').net).toBe(99);
+  });
+
+  // App.jsx reloads to show synced rows when a merge returns non-zero, so
+  // this return value has to be able to settle at 0 -- otherwise re-pulling
+  // the same already-known ended game over and over would reload forever.
+  test('returns 0 for a game already held locally, even though it still updates it', () => {
+    saveStore({ version: 1, liveId: null, games: [game('g_1', { net: 10 })] });
+    expect(mergeGames([game('g_1', { net: 10 })])).toBe(0);
+    // The update itself still happens (see "takes the remote copy" above) --
+    // only the count that would drive a reload loop is what changed here.
+    expect(listGames().find((g) => g.id === 'g_1').net).toBe(10);
   });
 });

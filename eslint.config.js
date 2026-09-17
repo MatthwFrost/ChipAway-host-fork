@@ -4,7 +4,12 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['dist/**', 'src/engine/**'] },
+  // The engine's two legacy files are large, pre-existing, and deliberately
+  // untouched by this branch (it must stay synchronous) -- narrowed here
+  // rather than left as a blanket src/engine/** ignore so the modules this
+  // branch actually added or changed (supabaseClient.js, auth.js, sync.js,
+  // games.js, handStore.js, ...) get linted like everything else.
+  { ignores: ['dist/**', 'src/engine/initializePokerTrainer.js', 'src/engine/table.js'] },
   {
     files: ['**/*.{js,jsx}'],
     ...js.configs.recommended,

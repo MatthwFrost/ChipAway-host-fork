@@ -18,6 +18,12 @@ beforeEach(async () => {
   localStorage.clear();
   upsert.mockResolvedValue({ error: null });
   select.mockResolvedValue({ data: [], error: null });
+  // vi.clearAllMocks() resets call history but NOT an implementation set via
+  // mockResolvedValue -- without resetting this here too, a test further
+  // down that overrides getUser() (e.g. to simulate being signed out) leaks
+  // that resolved value into every test that runs after it.
+  const auth = await import('./auth.js');
+  auth.getUser.mockResolvedValue({ id: 'user-1' });
   sync = await import('./sync.js');
 });
 

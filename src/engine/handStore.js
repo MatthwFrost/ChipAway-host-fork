@@ -149,7 +149,15 @@ export function mergeHands(list) {
   if (!added) return 0;
 
   hands.sort(function (a, b) { return (a.startedAt || 0) - (b.startedAt || 0); });
-  while (hands.length > MAX_HANDS) hands.shift();
+  // Trimming can shift off hands that were just added above (the oldest of
+  // the combined set), so the count has to be taken after the trim -- a
+  // caller relying on this number to know what actually landed in storage
+  // must not be told about a hand that got evicted before it was written.
+  const evictedIds = {};
+  while (hands.length > MAX_HANDS) evictedIds[hands.shift().id] = true;
+  const trimmedAway = list.reduce(function (n, h) {
+    return h && evictedIds[h.id] ? n + 1 : n;
+  }, 0);
   if (!writeRaw(hands)) return 0;
-  return added;
+  return added - trimmedAway;
 }

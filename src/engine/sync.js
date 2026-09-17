@@ -148,6 +148,11 @@ export async function push(presetUser) {
 
 // See push() above for `presetUser`.
 export async function pull(presetUser) {
+  // presetUser (from syncNow(), which has already resolved and checked it)
+  // skips this re-check entirely. Called standalone, pull() still has to
+  // confirm isConfigured/signed-in itself -- the resolved user is not needed
+  // below (the queries are scoped by RLS, not by an id this function passes
+  // along), only the guard is.
   if (!presetUser) {
     const required = await requireUser();
     if (required.error) return { games: 0, hands: 0, error: required.error };
