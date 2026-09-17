@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { initializePokerTrainer } from './engine/initializePokerTrainer';
 import { clearAllGames, createGame, defaultSetup, endGame, getLiveGame, listGames, migrateLegacySession } from './engine/games';
+import { clearHands } from './engine/handStore';
 import { openOnReload, takeScreenIntent } from './engine/screen';
 import { AppRail } from './components/AppRail';
 import { PokerTable } from './components/PokerTable';
@@ -11,6 +12,42 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { getUser, isGuest, onAuthChange, signOut } from './engine/auth';
 import { push, syncNow } from './engine/sync';
 import { SignInScreen } from './components/SignInScreen';
+
+// Which account's rows are currently sitting in chipaway.games.v1 /
+// chipaway.hands.v1. localStorage is one shared bucket regardless of who is
+// signed in, so on a shared browser signing out of A and into B must not let
+// syncNow() fold B's pull into rows still tagged as A's and then push them
+// back up re-owned as B's -- RLS cannot catch that, because the client really
+// is B at that point and really is asserting ownership. Absent means "this
+// data belongs to nobody's account yet", which is also the guest state, so a
+// guest who signs up keeps their local hands rather than losing them to a
+// clear that only makes sense between two *different* accounts.
+const LAST_USER_KEY = 'chipaway.lastUser';
+
+function getLastUser() {
+  try { return localStorage.getItem(LAST_USER_KEY); } catch (e) { return null; }
+}
+
+function setLastUser(id) {
+  try { localStorage.setItem(LAST_USER_KEY, id); } catch (e) { /* private mode */ }
+}
+
+function clearLastUser() {
+  try { localStorage.removeItem(LAST_USER_KEY); } catch (e) { /* private mode */ }
+}
+
+// Clears the local stores when, and only when, the account taking ownership
+// of this browser is not the one that was here before. Must run before the
+// first syncNow() for that user, or the pull/push it does will happily mix
+// the previous account's rows into the new one's.
+function clearIfDifferentAccount(userId) {
+  const last = getLastUser();
+  if (last && last !== userId) {
+    clearAllGames();
+    clearHands();
+  }
+  setLastUser(userId);
+}
 
 // Both screens stay mounted and a class decides which is visible. Unmounting
 // the table would destroy the nodes initializePokerTrainer holds by id, and it
@@ -58,6 +95,13 @@ export function App() {
   const engineInitedRef = useRef(false);
   const getEngine = useCallback(() => engineRef.current, []);
 
+  // Whether a real (non-guest) user has ever been established this page load.
+  // onAuthChange fires with no session on the ordinary signed-out first load
+  // too, and that must not reload -- there is nothing to recover from yet.
+  // Only losing a session that was actually there mid-play needs the reload
+  // below, so this stays false until the first real user shows up.
+  const hadUserRef = useRef(false);
+
   // True while the sign-in gate (or its pre-first-check stub) is on screen
   // instead of the shell. The table DOM that initializePokerTrainer binds to
   // by id only exists once this is false, so the init effect below must not
@@ -76,6 +120,10 @@ export function App() {
     let cancelled = false;
     getUser().then((u) => {
       if (cancelled) return;
+      // Before the first sync, make sure the stores about to be pulled into
+      // and pushed from actually belong to this account -- see
+      // clearIfDifferentAccount above.
+      if (u) { clearIfDifferentAccount(u.id); hadUserRef.current = true; }
       setUser(u);
       setAuthState('ready');
       // Pull anything played on another device, then push what is here. Only
@@ -86,8 +134,24 @@ export function App() {
   }, []);
 
   // Supabase refreshes tokens and can sign a session out from under us, so the
-  // gate follows the client rather than the one-shot check above.
+  // gate follows the client rather than the one-shot check above. Losing a
+  // session that was actually established mid-play (revoked elsewhere, a
+  // refresh-token failure, sign-out in another tab) cannot be handled by
+  // re-rendering the gate in place: the table DOM initializePokerTrainer bound
+  // to by id is still there, and there is no route back to a live engine
+  // without a reload -- the init effect above short-circuits on
+  // engineInitedRef, and initializePokerTrainer itself guards on
+  // window.__chipAwayInitialized. So this follows the same rule every other
+  // state change in this file does: when in doubt, reload. The initial
+  // signed-out load also arrives here with u === null and must NOT reload --
+  // hadUserRef distinguishes "never had a session" from "just lost one".
   useEffect(() => onAuthChange((u) => {
+    if (!u && hadUserRef.current) {
+      openOnReload('home');
+      location.reload();
+      return;
+    }
+    if (u) { clearIfDifferentAccount(u.id); hadUserRef.current = true; }
     setUser(u);
     setAuthState('ready');
   }), []);
@@ -109,7 +173,26 @@ export function App() {
   }, [user]);
 
   const doSignOut = useCallback(async () => {
+    // One last upload before the session that authorises it goes away, so the
+    // last minute of play is not stranded here only to be wiped by the clear
+    // below. Must run before signOut(), not after -- push() resolves the
+    // current user through getUser(), which would come back empty the moment
+    // the session is gone. Awaited unconditionally rather than fired and
+    // forgotten: push() already resolves to an { error } shape instead of
+    // throwing on a network failure, so awaiting it cannot turn into an
+    // unhandled rejection, and it is bounded by whatever timeout the
+    // underlying fetch has -- the same exposure the once-a-minute background
+    // push already carries. Losing the last few hands to a clear that ran
+    // ahead of the upload is worse than a sign-out that takes a moment
+    // longer.
+    await push();
     await signOut();
+    // Otherwise the next account to sign into this browser inherits this
+    // one's games and hands the moment syncNow() runs -- see
+    // clearIfDifferentAccount above for the sign-in side of this.
+    clearAllGames();
+    clearHands();
+    clearLastUser();
     setUser(null);
     setGuest(false);
     // A reload for the same reason every other state change reloads: the
@@ -181,7 +264,13 @@ export function App() {
 
     return (
       <SignInScreen
-        onSignedIn={(u) => { setUser(u); setAuthState('ready'); syncNow(); }}
+        onSignedIn={(u) => {
+          clearIfDifferentAccount(u.id);
+          hadUserRef.current = true;
+          setUser(u);
+          setAuthState('ready');
+          syncNow();
+        }}
         onGuest={() => setGuest(true)}
       />
     );

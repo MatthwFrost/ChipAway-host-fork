@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('./engine/auth.js', () => ({
   getUser: vi.fn(),
@@ -154,5 +154,115 @@ describe('auth gate defers engine init until the shell renders', () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument());
     await waitFor(() => expect(initializePokerTrainer).toHaveBeenCalledTimes(1));
+  });
+});
+
+// Critical 1: on a shared browser, signing out of one account and into another
+// must not let the second account's syncNow() fold the first account's rows
+// (still sitting under the one shared localStorage key) into its own, and
+// then push them back up re-owned as its own. RLS cannot catch this -- the
+// client really is the second account at that point.
+describe('local data ownership across accounts (Critical 1)', () => {
+  let reload;
+
+  beforeEach(() => {
+    reload = vi.fn();
+    // jsdom's location.reload is not writable, so the whole object is replaced.
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, reload },
+    });
+  });
+
+  function seedLocalData() {
+    localStorage.setItem('chipaway.games.v1', JSON.stringify({
+      version: 1, liveId: null, games: [{ id: 'g1', createdAt: 1, status: 'ended', setup: {}, net: 0, state: {} }],
+    }));
+    localStorage.setItem('chipaway.hands.v1', JSON.stringify([{ id: 'h1', v: 1 }]));
+  }
+
+  test('sign-out pushes once more, then clears games and hands from localStorage', async () => {
+    seedLocalData();
+    auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
+    render(<App />);
+    await screen.findByText('a@b.com');
+
+    fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
+
+    await waitFor(() => expect(auth.signOut).toHaveBeenCalled());
+    // The push must have happened before signOut() tore down the session it
+    // needs to resolve a user.
+    expect(sync.push).toHaveBeenCalled();
+    expect(localStorage.getItem('chipaway.games.v1')).toBeNull();
+    expect(localStorage.getItem('chipaway.hands.v1')).toBeNull();
+    expect(localStorage.getItem('chipaway.lastUser')).toBeNull();
+    expect(reload).toHaveBeenCalled();
+  });
+
+  test('signing into a different account clears the previous account\'s local data first', async () => {
+    localStorage.setItem('chipaway.lastUser', 'u1');
+    seedLocalData();
+    auth.getUser.mockResolvedValue({ id: 'u2', email: 'b@b.com' });
+
+    render(<App />);
+    await screen.findByText('b@b.com');
+
+    expect(localStorage.getItem('chipaway.games.v1')).toBeNull();
+    expect(localStorage.getItem('chipaway.hands.v1')).toBeNull();
+    expect(localStorage.getItem('chipaway.lastUser')).toBe('u2');
+  });
+
+  test('a guest who signs into an account (no marker yet) keeps their local hands', async () => {
+    // No chipaway.lastUser key at all -- this data belongs to nobody's
+    // account yet, which is exactly the guest-adopts-an-account case.
+    seedLocalData();
+    auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
+
+    render(<App />);
+    await screen.findByText('a@b.com');
+
+    expect(localStorage.getItem('chipaway.games.v1')).not.toBeNull();
+    expect(localStorage.getItem('chipaway.hands.v1')).not.toBeNull();
+    expect(localStorage.getItem('chipaway.lastUser')).toBe('u1');
+  });
+});
+
+// Critical 3: losing a session mid-play (a revoked session, a refresh-token
+// failure, sign-out in another tab) must reload rather than re-render the
+// gate in place -- the table DOM initializePokerTrainer bound to by id is
+// still there, and there is no route back to a live engine without a reload.
+describe('reload on mid-session loss (Critical 3)', () => {
+  let reload;
+
+  beforeEach(() => {
+    reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, reload },
+    });
+  });
+
+  test('reloads when a session is lost after a user had been established', async () => {
+    auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
+    render(<App />);
+    await screen.findByText('a@b.com');
+
+    const onChange = auth.onAuthChange.mock.calls[0][0];
+    act(() => { onChange(null); });
+
+    expect(reload).toHaveBeenCalled();
+  });
+
+  test('does not reload on the ordinary signed-out first load', async () => {
+    auth.getUser.mockResolvedValue(null);
+    render(<App />);
+    await screen.findByRole('button', { name: 'Sign in' });
+
+    const onChange = auth.onAuthChange.mock.calls[0][0];
+    act(() => { onChange(null); });
+
+    expect(reload).not.toHaveBeenCalled();
+    // Still gated on the sign-in screen rather than stuck on a blank shell.
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 });
