@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { initializePokerTrainer } from './engine/initializePokerTrainer';
 import { clearAllGames, createGame, defaultSetup, endGame, getLiveGame, listGames, migrateLegacySession } from './engine/games';
 import { openOnReload, takeScreenIntent } from './engine/screen';
@@ -8,6 +8,9 @@ import { SidePanel } from './components/SidePanel';
 import { SettingsModal } from './components/SettingsModal';
 import { HomeScreen } from './components/HomeScreen';
 import { HistoryPanel } from './components/HistoryPanel';
+import { getUser, isGuest, onAuthChange, signOut } from './engine/auth';
+import { syncNow } from './engine/sync';
+import { SignInScreen } from './components/SignInScreen';
 
 // Both screens stay mounted and a class decides which is visible. Unmounting
 // the table would destroy the nodes initializePokerTrainer holds by id, and it
@@ -20,6 +23,13 @@ export function App() {
   // Settings is opened from a button in the Game moves heading, deep inside the
   // side panel, so the open flag has to live above both of them.
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // 'checking' until the first getUser() resolves. Rendering the gate during
+  // that window would flash a sign-in form at somebody who is already signed
+  // in, on every single page load.
+  const [authState, setAuthState] = useState('checking');
+  const [user, setUser] = useState(null);
+  const [guest, setGuest] = useState(() => isGuest());
 
   // Read once, at first render, because takeScreenIntent consumes the intent —
   // it is for the reload that just happened, not for every render after it.
@@ -49,6 +59,36 @@ export function App() {
 
   useLayoutEffect(() => {
     engineRef.current = initializePokerTrainer();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getUser().then((u) => {
+      if (cancelled) return;
+      setUser(u);
+      setAuthState('ready');
+      // Pull anything played on another device, then push what is here. Only
+      // for a real account -- a guest has nowhere to sync to.
+      if (u) syncNow();
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Supabase refreshes tokens and can sign a session out from under us, so the
+  // gate follows the client rather than the one-shot check above.
+  useEffect(() => onAuthChange((u) => {
+    setUser(u);
+    setAuthState('ready');
+  }), []);
+
+  const doSignOut = useCallback(async () => {
+    await signOut();
+    setUser(null);
+    setGuest(false);
+    // A reload for the same reason every other state change reloads: the
+    // engine holds the previous account's game in memory.
+    openOnReload('home');
+    location.reload();
   }, []);
 
   // A reload is the only route to a clean engine, and is what the old reset
@@ -105,9 +145,26 @@ export function App() {
     location.reload();
   }, []);
 
+  // A guest already opted out of an account, so there is nothing worth
+  // waiting on the network for -- skip the checking gate below entirely.
+  if (!guest) {
+    // Nothing at all until the first check resolves -- see the comment on
+    // authState above.
+    if (authState === 'checking') return <div className="shell" data-screen="home" />;
+
+    if (!user) {
+      return (
+        <SignInScreen
+          onSignedIn={(u) => { setUser(u); setAuthState('ready'); syncNow(); }}
+          onGuest={() => setGuest(true)}
+        />
+      );
+    }
+  }
+
   return (
     <div className="shell" data-screen={screen}>
-      <AppRail screen={screen} onNavigate={navigate} />
+      <AppRail screen={screen} onNavigate={navigate} user={user} onSignOut={doSignOut} />
 
       <HomeScreen
         games={games}

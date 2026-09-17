@@ -13,6 +13,9 @@ beforeAll(() => {
     seed = (seed * 1103515245 + 12345) % 2147483648;
     return seed / 2147483648;
   };
+  // Runs with no Supabase config, so guest mode is the right default to get
+  // past the auth gate.
+  localStorage.setItem('chipaway.guest', '1');
 });
 afterAll(() => {
   Math.random = realRandom;

@@ -2,10 +2,10 @@
 // the table. It sits outside .board-grid so the table/side-panel split below is
 // free to collapse on narrow screens without the rail moving with it.
 //
-// Home and Play are real screens now; the profile is still a placeholder and
-// carries no handler on purpose.
+// Home and Play are real screens now, and the profile row at the foot shows
+// whoever is signed in (or that nobody is, for a guest) and signs them out.
 
-export function AppRail({ screen = 'table', onNavigate = () => {} }) {
+export function AppRail({ screen = 'table', onNavigate = () => {}, user = null, onSignOut = () => {} }) {
   return (
     <nav className="app-rail" aria-label="Main">
       <div className="app-rail-brand">
@@ -80,12 +80,14 @@ export function AppRail({ screen = 'table', onNavigate = () => {} }) {
       </div>
 
       {/* margin-top:auto pins this to the floor of the rail, whatever grows
-          above it. */}
-      <button type="button" className="rail-profile">
-        <span className="rail-avatar" aria-hidden="true">M</span>
+          above it. Guests get the same row, saying what they are missing. */}
+      <button type="button" className="rail-profile" onClick={onSignOut} disabled={!user}>
+        <span className="rail-avatar" aria-hidden="true">
+          {user && user.email ? user.email[0].toUpperCase() : 'G'}
+        </span>
         <span className="rail-profile-text">
-          <span className="rail-profile-name">Matty Frost</span>
-          <span className="rail-profile-meta"></span>
+          <span className="rail-profile-name">{user && user.email ? user.email : 'Guest'}</span>
+          <span className="rail-profile-meta">{user ? 'Sign out' : 'Not signed in'}</span>
         </span>
       </button>
     </nav>

@@ -12,6 +12,10 @@ let reload;
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
+  // Runs with no Supabase config, so guest mode is the right default to get
+  // past the auth gate. Set after clear(), not in a beforeAll, because this
+  // file's own beforeEach clears localStorage ahead of every test.
+  localStorage.setItem('chipaway.guest', '1');
   reload = vi.fn();
   // jsdom's location.reload is not writable, so the whole object is replaced.
   Object.defineProperty(window, 'location', {

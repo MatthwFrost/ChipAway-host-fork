@@ -1,10 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { expect, test, vi } from 'vitest';
+import { beforeAll, expect, test, vi } from 'vitest';
 import { App } from './App';
 
 vi.mock('./engine/initializePokerTrainer', () => ({ initializePokerTrainer: vi.fn() }));
 
 import { initializePokerTrainer } from './engine/initializePokerTrainer';
+
+// These tests run with no Supabase config, so the auth gate never resolves a
+// real user -- guest mode is the right default to get past it.
+beforeAll(() => { localStorage.setItem('chipaway.guest', '1'); });
 
 test('renders the componentised trainer shell and starts the poker engine', () => {
   render(<App />);

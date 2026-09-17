@@ -33,6 +33,9 @@ beforeAll(() => {
     return seed / 2147483648;
   };
   clearHands();
+  // Runs with no Supabase config, so guest mode is the right default to get
+  // past the auth gate.
+  localStorage.setItem('chipaway.guest', '1');
   // A real player reaches the table by starting a game, and the hand is filed
   // against it. Dealing without one is possible (the felt is live on the Play
   // screen regardless) and files an orphan, which is why the gameId assertion
