@@ -139,7 +139,9 @@ export function mergeHands(list) {
   let added = 0;
   list.forEach(function (h) {
     if (!h || !h.id || seen[h.id]) return;
-    if (h.v !== HAND_SCHEMA_VERSION) return;
+    // Match readRaw's acceptance check exactly: a hand that would be dropped
+    // on the very next load must not be counted as merged here either.
+    if (h.v !== HAND_SCHEMA_VERSION || !h.config || !h.events) return;
     hands.push(h);
     seen[h.id] = true;
     added += 1;
@@ -148,6 +150,6 @@ export function mergeHands(list) {
 
   hands.sort(function (a, b) { return (a.startedAt || 0) - (b.startedAt || 0); });
   while (hands.length > MAX_HANDS) hands.shift();
-  writeRaw(hands);
+  if (!writeRaw(hands)) return 0;
   return added;
 }

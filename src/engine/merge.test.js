@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { clearHands, loadHands, mergeHands, saveHand } from './handStore.js';
 import { clearAllGames, listGames, loadStore, mergeGames, saveStore } from './games.js';
 import { HAND_SCHEMA_VERSION } from './handRecorder.js';
@@ -46,6 +46,33 @@ describe('mergeHands', () => {
   test('orders the merged result oldest first', () => {
     mergeHands([hand(3), hand(1), hand(2)]);
     expect(loadHands().map((h) => h.handNo)).toEqual([1, 2, 3]);
+  });
+
+  test('rejects a hand missing config or events so it cannot vanish on the next load', () => {
+    // readRaw() requires h.config && h.events on every read, so a hand that
+    // slips past a looser merge filter would be counted here and then
+    // silently dropped the next time loadHands() runs.
+    expect(mergeHands([hand(1, { config: null })])).toBe(0);
+    expect(loadHands()).toHaveLength(0);
+    expect(mergeHands([hand(1, { events: undefined })])).toBe(0);
+    expect(loadHands()).toHaveLength(0);
+  });
+
+  test('rejects a hand with a mismatched schema version', () => {
+    expect(mergeHands([hand(1, { v: HAND_SCHEMA_VERSION + 1 })])).toBe(0);
+    expect(loadHands()).toHaveLength(0);
+  });
+
+  test('returns 0 when the write to storage fails', () => {
+    saveHand(hand(1));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+    expect(mergeHands([hand(2)])).toBe(0);
+    setItem.mockRestore();
+    // Nothing was persisted, so a plain read (bypassing the mock) still shows
+    // only the hand that was already there.
+    expect(loadHands().map((h) => h.handNo)).toEqual([1]);
   });
 });
 
