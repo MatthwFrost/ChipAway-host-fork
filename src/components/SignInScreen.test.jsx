@@ -11,7 +11,10 @@ const auth = await import('../engine/auth.js');
 
 beforeEach(() => { vi.clearAllMocks(); });
 
-function fill(email, password) {
+function fill(email, password, name) {
+  if (name !== undefined) {
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: name } });
+  }
   fireEvent.change(screen.getByLabelText('Email'), { target: { value: email } });
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: password } });
 }
@@ -51,9 +54,9 @@ describe('SignInScreen', () => {
     auth.signUp.mockResolvedValue({ user: { id: 'u2' }, error: null, needsConfirmation: false });
     render(<SignInScreen onSignedIn={() => {}} onGuest={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: /Create one/ }));
-    fill('new@b.com', 'password123');
+    fill('new@b.com', 'password123', 'Ada Lovelace');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
-    await waitFor(() => expect(auth.signUp).toHaveBeenCalledWith('new@b.com', 'password123'));
+    await waitFor(() => expect(auth.signUp).toHaveBeenCalledWith('new@b.com', 'password123', 'Ada Lovelace'));
   });
 
   test('tells the player to confirm their email when required', async () => {
@@ -61,11 +64,29 @@ describe('SignInScreen', () => {
     const onSignedIn = vi.fn();
     render(<SignInScreen onSignedIn={onSignedIn} onGuest={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: /Create one/ }));
-    fill('new@b.com', 'password123');
+    fill('new@b.com', 'password123', 'Ada Lovelace');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
     await screen.findByText(/Check your email/);
     // Not signed in yet -- there is no session until the link is clicked.
     expect(onSignedIn).not.toHaveBeenCalled();
+  });
+
+  test('the Name field only appears in create-account mode', () => {
+    render(<SignInScreen onSignedIn={() => {}} onGuest={() => {}} />);
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Create one/ }));
+    expect(screen.getByLabelText('Name')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Sign in/ }));
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+  });
+
+  test('clears the name field when switching back to sign-in mode', () => {
+    render(<SignInScreen onSignedIn={() => {}} onGuest={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Create one/ }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ada Lovelace' } });
+    fireEvent.click(screen.getByRole('button', { name: /Already have an account/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Create one/ }));
+    expect(screen.getByLabelText('Name')).toHaveValue('');
   });
 
   test('the bypass marks guest mode and reports upward', () => {

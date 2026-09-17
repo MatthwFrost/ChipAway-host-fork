@@ -12,6 +12,7 @@ import { continueAsGuest, signIn, signUp } from '../engine/auth.js';
 
 export function SignInScreen({ onSignedIn, onGuest }) {
   const [mode, setMode] = useState('signin');   // 'signin' | 'signup'
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -26,7 +27,7 @@ export function SignInScreen({ onSignedIn, onGuest }) {
     setNotice(null);
     setBusy(true);
     try {
-      const res = creating ? await signUp(email, password) : await signIn(email, password);
+      const res = creating ? await signUp(email, password, name) : await signIn(email, password);
       if (res.error) { setError(res.error); return; }
       if (creating && res.needsConfirmation) {
         setNotice('Check your email and click the link to finish creating your account.');
@@ -50,7 +51,7 @@ export function SignInScreen({ onSignedIn, onGuest }) {
     } finally {
       setBusy(false);
     }
-  }, [creating, email, password, onSignedIn]);
+  }, [creating, name, email, password, onSignedIn]);
 
   const skip = useCallback(() => {
     continueAsGuest();
@@ -68,6 +69,21 @@ export function SignInScreen({ onSignedIn, onGuest }) {
         </p>
 
         <form className="signin-form" onSubmit={submit}>
+          {creating ? (
+            <>
+              <label className="signin-label" htmlFor="signin-name">Name</label>
+              <input
+                id="signin-name"
+                className="signin-input"
+                type="text"
+                autoComplete="name"
+                maxLength={40}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </>
+          ) : null}
+
           <label className="signin-label" htmlFor="signin-email">Email</label>
           <input
             id="signin-email"
@@ -101,7 +117,7 @@ export function SignInScreen({ onSignedIn, onGuest }) {
         <button
           type="button"
           className="signin-switch"
-          onClick={() => { setMode(creating ? 'signin' : 'signup'); setError(null); setNotice(null); }}
+          onClick={() => { setMode(creating ? 'signin' : 'signup'); setError(null); setNotice(null); setName(''); }}
         >
           {creating ? 'Already have an account? Sign in' : 'No account? Create one'}
         </button>
