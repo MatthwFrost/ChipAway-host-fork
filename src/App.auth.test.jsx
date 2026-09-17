@@ -9,6 +9,7 @@ vi.mock('./engine/auth.js', () => ({
   signIn: vi.fn(),
   signUp: vi.fn(),
   continueAsGuest: vi.fn(),
+  endGuest: vi.fn(),
 }));
 vi.mock('./engine/sync.js', () => ({
   syncNow: vi.fn(async () => ({ pushed: null, pulled: null, error: null })),
@@ -264,5 +265,138 @@ describe('reload on mid-session loss (Critical 3)', () => {
     expect(reload).not.toHaveBeenCalled();
     // Still gated on the sign-in screen rather than stuck on a blank shell.
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+  });
+});
+
+// Important 4: `games` is read once at first render, so a sync that pulls in
+// rows from another browser is invisible until something reloads the page.
+// The reload has to be keyed on a count that genuinely cannot be non-zero on
+// a no-op re-pull, or it loops forever -- see the comment on
+// reloadIfSyncedSomethingNew in App.jsx and on mergeGames in games.js for why
+// "touched" (which includes routine updates to already-known ended games)
+// was rejected in favour of "added".
+describe('reload after a sync pulls in something new (Important 4)', () => {
+  let reload;
+
+  beforeEach(() => {
+    reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, reload },
+    });
+  });
+
+  test('reloads once the boot sync pulls in a game or hand not held locally', async () => {
+    auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
+    sync.syncNow.mockResolvedValue({ pushed: { games: 0, hands: 0, error: null }, pulled: { games: 1, hands: 0, error: null }, error: null });
+    render(<App />);
+    await screen.findByText('a@b.com');
+    await waitFor(() => expect(reload).toHaveBeenCalled());
+  });
+
+  test('does not reload when the sync pulls in nothing new', async () => {
+    auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
+    sync.syncNow.mockResolvedValue({ pushed: { games: 0, hands: 0, error: null }, pulled: { games: 0, hands: 0, error: null }, error: null });
+    render(<App />);
+    await screen.findByText('a@b.com');
+    // A tick for the syncNow().then(...) microtask to have had every chance
+    // to run before asserting its absence.
+    await Promise.resolve();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  test('reloads once syncing in from the sign-in gate pulls in something new', async () => {
+    auth.getUser.mockResolvedValue(null);
+    auth.signIn.mockResolvedValue({ user: { id: 'u1', email: 'a@b.com' }, error: null });
+    sync.syncNow.mockResolvedValue({ pushed: { games: 0, hands: 0, error: null }, pulled: { games: 0, hands: 1, error: null }, error: null });
+    render(<App />);
+    await screen.findByRole('button', { name: 'Sign in' });
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() => expect(reload).toHaveBeenCalled());
+  });
+
+  test('a merge that keeps returning non-zero on every pull (an update, not an add) would loop -- pulled.games/hands must not carry that', async () => {
+    // Regression guard for the trap called out in the review: if syncNow's
+    // pulled counts included routine updates to already-known rows (as
+    // mergeGames' old "touched" return did), this boot sync would reload,
+    // the fresh boot would sync again, get the same non-zero "touched" count
+    // back, and reload again forever. Asserting a single reload call proves
+    // this test setup -- and by extension the real mergeGames "added" count
+    // it stands in for -- does not do that.
+    auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
+    sync.syncNow.mockResolvedValue({ pushed: { games: 0, hands: 0, error: null }, pulled: { games: 1, hands: 0, error: null }, error: null });
+    render(<App />);
+    await screen.findByText('a@b.com');
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Important 6: getUser() revalidates over the wire and can resolve after
+// onAuthChange's INITIAL_SESSION has already established a user from local
+// storage with no network call. auth.js's getUser() also turns any transport
+// failure into a plain null (see auth.js), so a late resolution here must not
+// be treated as "signed out" once a real session is already established.
+describe('a late getUser() null does not clear an already-established user (Important 6)', () => {
+  test('does not sign the player out when onAuthChange establishes a user before getUser() resolves', async () => {
+    let resolveGetUser;
+    auth.getUser.mockImplementation(() => new Promise((resolve) => { resolveGetUser = resolve; }));
+    render(<App />);
+
+    // onAuthChange's subscription callback fires first, as it does for real
+    // (INITIAL_SESSION comes from local storage, no network round trip).
+    const onChange = auth.onAuthChange.mock.calls[0][0];
+    act(() => { onChange({ id: 'u1', email: 'a@b.com' }); });
+    await screen.findByText('a@b.com');
+
+    // The slower, network-revalidating getUser() now resolves null -- a
+    // transport failure or a slow response landing after the fact.
+    await act(async () => { resolveGetUser(null); });
+
+    // Still signed in: a null from getUser() must not overwrite a user the
+    // subscription already established.
+    expect(screen.getByText('a@b.com')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
+  });
+
+  test('a genuinely signed-out player still reaches the gate', async () => {
+    auth.getUser.mockResolvedValue(null);
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+  });
+});
+
+// Important 5: "Skip for now" disabled the profile button along with
+// everything else it does, leaving a guest no way back to the sign-in screen
+// short of devtools.
+describe('a guest has a route back to the sign-in screen (Important 5)', () => {
+  let reload;
+
+  beforeEach(() => {
+    reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, reload },
+    });
+  });
+
+  test('the profile button is enabled for a guest and drops the guest flag', async () => {
+    auth.getUser.mockResolvedValue(null);
+    auth.isGuest.mockReturnValue(true);
+    render(<App />);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull());
+
+    const profileButton = screen.getByRole('button', { name: /sign in or create an account/i });
+    expect(profileButton).toBeEnabled();
+
+    fireEvent.click(profileButton);
+
+    expect(auth.endGuest).toHaveBeenCalled();
+    expect(reload).toHaveBeenCalled();
   });
 });

@@ -3,9 +3,11 @@
 // free to collapse on narrow screens without the rail moving with it.
 //
 // Home and Play are real screens now, and the profile row at the foot shows
-// whoever is signed in (or that nobody is, for a guest) and signs them out.
+// whoever is signed in (or that nobody is, for a guest). For a signed-in
+// player it signs them out; for a guest it is the only route back to the
+// sign-in screen -- "Skip for now" is otherwise a one-way door.
 
-export function AppRail({ screen = 'table', onNavigate = () => {}, user = null, onSignOut = () => {} }) {
+export function AppRail({ screen = 'table', onNavigate = () => {}, user = null, onSignOut = () => {}, onLeaveGuest = () => {} }) {
   return (
     <nav className="app-rail" aria-label="Main">
       <div className="app-rail-brand">
@@ -80,14 +82,16 @@ export function AppRail({ screen = 'table', onNavigate = () => {}, user = null, 
       </div>
 
       {/* margin-top:auto pins this to the floor of the rail, whatever grows
-          above it. Guests get the same row, saying what they are missing. */}
-      <button type="button" className="rail-profile" onClick={onSignOut} disabled={!user}>
+          above it. Guests get the same row, saying what they are missing --
+          and clicking it is their route back to the sign-in screen, since
+          "Skip for now" would otherwise be a one-way door. */}
+      <button type="button" className="rail-profile" onClick={user ? onSignOut : onLeaveGuest}>
         <span className="rail-avatar" aria-hidden="true">
           {user && user.email ? user.email[0].toUpperCase() : 'G'}
         </span>
         <span className="rail-profile-text">
           <span className="rail-profile-name">{user && user.email ? user.email : 'Guest'}</span>
-          <span className="rail-profile-meta">{user ? 'Sign out' : 'Not signed in'}</span>
+          <span className="rail-profile-meta">{user ? 'Sign out' : 'Sign in or create an account'}</span>
         </span>
       </button>
     </nav>

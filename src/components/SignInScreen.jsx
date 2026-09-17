@@ -32,7 +32,16 @@ export function SignInScreen({ onSignedIn, onGuest }) {
         setNotice('Check your email and click the link to finish creating your account.');
         return;
       }
-      if (res.user) onSignedIn(res.user);
+      if (res.user) {
+        onSignedIn(res.user);
+      } else {
+        // Neither an error nor a user: should not happen given auth.js's
+        // contract, but a form that just sits there with the button re-enabled
+        // and no feedback reads as broken. Reuse the same generic message the
+        // catch block below already shows for the equivalent "something came
+        // back that was not supposed to" case.
+        setError('Something went wrong. Try again.');
+      }
     } catch (e) {
       // Belt and braces: auth.js already catches transport failures and
       // returns them as res.error above, but if a future caller ever throws

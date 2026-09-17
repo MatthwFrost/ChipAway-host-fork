@@ -9,7 +9,7 @@ import { SidePanel } from './components/SidePanel';
 import { SettingsModal } from './components/SettingsModal';
 import { HomeScreen } from './components/HomeScreen';
 import { HistoryPanel } from './components/HistoryPanel';
-import { getUser, isGuest, onAuthChange, signOut } from './engine/auth';
+import { endGuest, getUser, isGuest, onAuthChange, signOut } from './engine/auth';
 import { push, syncNow } from './engine/sync';
 import { SignInScreen } from './components/SignInScreen';
 
@@ -47,6 +47,26 @@ function clearIfDifferentAccount(userId) {
     clearHands();
   }
   setLastUser(userId);
+}
+
+// games is read once at first render (see the comment on that useState
+// below), so a sync that pulls in rows from another device is invisible
+// until something reloads the page. Keyed on mergeGames'/mergeHands' ADDED
+// counts specifically, not a "touched" count that includes updates:
+// mergeGames re-applies the remote copy of every already-known ended game on
+// every single pull, whether or not anything about it actually changed, so a
+// count that included updates would be non-zero forever and this would
+// reload in a loop. The added count cannot do that -- once a remote id has
+// been folded in locally once, it is no longer "not held locally" on the
+// next pull, so the count settles at 0 and the reload this triggers cannot
+// re-trigger itself.
+function reloadIfSyncedSomethingNew(result) {
+  const pulled = result && result.pulled;
+  if (!pulled) return;
+  if ((pulled.games || 0) + (pulled.hands || 0) > 0) {
+    openOnReload('home');
+    location.reload();
+  }
 }
 
 // Both screens stay mounted and a class decides which is visible. Unmounting
@@ -120,15 +140,25 @@ export function App() {
     let cancelled = false;
     getUser().then((u) => {
       if (cancelled) return;
+      // getUser() revalidates over the wire and onAuthChange's INITIAL_SESSION
+      // fires from local storage with no network call at all, so it typically
+      // lands first. If it already established a real user, a null here is
+      // not "signed out" -- it is a slow response landing after a faster,
+      // already-authoritative one, or a transport failure that getUser()
+      // (see auth.js) quietly turns into null. Either way, slamming the gate
+      // shut on a player whose session the subscription already confirmed is
+      // wrong; only a genuine first-load null (hadUserRef still false) may
+      // set the gated state.
+      if (!u && hadUserRef.current) return;
       // Before the first sync, make sure the stores about to be pulled into
       // and pushed from actually belong to this account -- see
       // clearIfDifferentAccount above.
       if (u) { clearIfDifferentAccount(u.id); hadUserRef.current = true; }
       setUser(u);
       setAuthState('ready');
-      // Pull anything played on another device, then push what is here. Only
+      // Push what is here, then pull anything played on another device. Only
       // for a real account -- a guest has nowhere to sync to.
-      if (u) syncNow();
+      if (u) syncNow().then(reloadIfSyncedSomethingNew);
     });
     return () => { cancelled = true; };
   }, []);
@@ -161,8 +191,15 @@ export function App() {
   // tab is hidden or closed, and once a minute while it is open. Losing a push
   // costs nothing -- the next one re-sends everything local that the server
   // does not already have.
+  // Keyed on the id, not the user object: Supabase hands back a new object on
+  // every token refresh, and keying the effect below on the object itself
+  // would tear this interval down and restart it every time -- losing up to
+  // 60 seconds of the push cadence for no reason, since the id (and therefore
+  // whether a background push should be running at all) has not changed.
+  const userId = user ? user.id : null;
+
   useEffect(() => {
-    if (!user) return undefined;
+    if (!userId) return undefined;
     const onHide = () => { if (document.visibilityState === 'hidden') push(); };
     const timer = setInterval(push, 60000);
     document.addEventListener('visibilitychange', onHide);
@@ -170,7 +207,7 @@ export function App() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onHide);
     };
-  }, [user]);
+  }, [userId]);
 
   const doSignOut = useCallback(async () => {
     // One last upload before the session that authorises it goes away, so the
@@ -197,6 +234,20 @@ export function App() {
     setGuest(false);
     // A reload for the same reason every other state change reloads: the
     // engine holds the previous account's game in memory.
+    openOnReload('home');
+    location.reload();
+  }, []);
+
+  // "Skip for now" would otherwise be a one-way door: nothing else clears
+  // chipaway.guest, so a guest had no way back to the sign-in screen short of
+  // devtools. Local games and hands are left alone -- they are unowned data
+  // (see the comment on LAST_USER_KEY above), so if this player goes on to
+  // sign in or sign up, clearIfDifferentAccount keeps them rather than
+  // wiping them. A reload for the same reason every other state change here
+  // reloads: the engine and the gate/shell decision both need to start clean.
+  const leaveGuest = useCallback(() => {
+    endGuest();
+    setGuest(false);
     openOnReload('home');
     location.reload();
   }, []);
@@ -269,7 +320,7 @@ export function App() {
           hadUserRef.current = true;
           setUser(u);
           setAuthState('ready');
-          syncNow();
+          syncNow().then(reloadIfSyncedSomethingNew);
         }}
         onGuest={() => setGuest(true)}
       />
@@ -278,7 +329,7 @@ export function App() {
 
   return (
     <div className="shell" data-screen={screen}>
-      <AppRail screen={screen} onNavigate={navigate} user={user} onSignOut={doSignOut} />
+      <AppRail screen={screen} onNavigate={navigate} user={user} onSignOut={doSignOut} onLeaveGuest={leaveGuest} />
 
       <HomeScreen
         games={games}
