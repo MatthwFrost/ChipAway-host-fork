@@ -1,0 +1,108 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+
+// The client is mocked wholesale: these tests are about the wrapper's contract
+// -- friendly errors, guest flag, unsubscribe -- not about supabase-js.
+const mockAuth = {
+  signUp: vi.fn(),
+  signInWithPassword: vi.fn(),
+  signOut: vi.fn(),
+  getUser: vi.fn(),
+  onAuthStateChange: vi.fn(),
+};
+
+vi.mock('./supabaseClient.js', () => ({
+  supabase: { auth: mockAuth },
+  isConfigured: true,
+  SUPABASE_URL: 'https://example.supabase.co',
+}));
+
+let auth;
+beforeEach(async () => {
+  vi.clearAllMocks();
+  localStorage.clear();
+  auth = await import('./auth.js');
+});
+afterEach(() => { vi.resetModules(); });
+
+describe('sign in', () => {
+  test('returns the user on success', async () => {
+    mockAuth.signInWithPassword.mockResolvedValue({ data: { user: { id: 'u1', email: 'a@b.com' } }, error: null });
+    const res = await auth.signIn('a@b.com', 'pw');
+    expect(res.user.id).toBe('u1');
+    expect(res.error).toBeNull();
+  });
+
+  test('turns a bad-credentials error into something a person can read', async () => {
+    mockAuth.signInWithPassword.mockResolvedValue({ data: { user: null }, error: { message: 'Invalid login credentials' } });
+    const res = await auth.signIn('a@b.com', 'wrong');
+    expect(res.user).toBeNull();
+    expect(res.error).toBe('That email and password do not match.');
+  });
+
+  test('refuses an empty email or password without calling the network', async () => {
+    const res = await auth.signIn('', '');
+    expect(res.error).toBe('Enter your email and password.');
+    expect(mockAuth.signInWithPassword).not.toHaveBeenCalled();
+  });
+});
+
+describe('sign up', () => {
+  test('flags when a confirmation email is required', async () => {
+    // Supabase returns a user with no session when confirmations are on.
+    mockAuth.signUp.mockResolvedValue({ data: { user: { id: 'u2' }, session: null }, error: null });
+    const res = await auth.signUp('a@b.com', 'password123');
+    expect(res.needsConfirmation).toBe(true);
+    expect(res.error).toBeNull();
+  });
+
+  test('does not flag confirmation when a session comes back', async () => {
+    mockAuth.signUp.mockResolvedValue({ data: { user: { id: 'u2' }, session: { access_token: 't' } }, error: null });
+    const res = await auth.signUp('a@b.com', 'password123');
+    expect(res.needsConfirmation).toBe(false);
+  });
+
+  test('rejects a short password before calling the network', async () => {
+    const res = await auth.signUp('a@b.com', 'short');
+    expect(res.error).toBe('Use a password of at least 8 characters.');
+    expect(mockAuth.signUp).not.toHaveBeenCalled();
+  });
+});
+
+describe('guest mode', () => {
+  test('is off by default, on after continueAsGuest, off after endGuest', () => {
+    expect(auth.isGuest()).toBe(false);
+    auth.continueAsGuest();
+    expect(auth.isGuest()).toBe(true);
+    auth.endGuest();
+    expect(auth.isGuest()).toBe(false);
+  });
+});
+
+describe('onAuthChange', () => {
+  test('passes the user through and returns a working unsubscribe', () => {
+    const unsubscribe = vi.fn();
+    let handler = null;
+    mockAuth.onAuthStateChange.mockImplementation((cb) => {
+      handler = cb;
+      return { data: { subscription: { unsubscribe } } };
+    });
+    const seen = [];
+    const off = auth.onAuthChange((u) => seen.push(u));
+
+    handler('SIGNED_IN', { user: { id: 'u1' } });
+    handler('SIGNED_OUT', null);
+    expect(seen).toEqual([{ id: 'u1' }, null]);
+
+    off();
+    expect(unsubscribe).toHaveBeenCalled();
+  });
+});
+
+describe('sign out', () => {
+  test('clears the guest flag too, so the gate is not bypassed afterwards', async () => {
+    mockAuth.signOut.mockResolvedValue({ error: null });
+    auth.continueAsGuest();
+    await auth.signOut();
+    expect(auth.isGuest()).toBe(false);
+  });
+});
