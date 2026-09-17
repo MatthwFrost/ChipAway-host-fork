@@ -78,14 +78,39 @@ describe('auth gate', () => {
     expect(await screen.findByText('matty@example.com')).toBeInTheDocument();
   });
 
+  // jsdom reports visibilityState 'visible' and will not change it, so a bare
+  // dispatchEvent leaves the listener's own `=== 'hidden'` check false and the
+  // assertion passes no matter what the effect does. Forcing the property is
+  // what makes these two tests able to fail.
+  function hideTab() {
+    const own = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    if (own) Object.defineProperty(document, 'visibilityState', own);
+    else delete document.visibilityState;
+  }
+
   test('does not start the background push for a guest', async () => {
     auth.getUser.mockResolvedValue(null);
     auth.isGuest.mockReturnValue(true);
-    const sync2 = await import('./engine/sync.js');
     render(<App />);
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull());
-    document.dispatchEvent(new Event('visibilitychange'));
-    expect(sync2.push).not.toHaveBeenCalled();
+    hideTab();
+    expect(sync.push).not.toHaveBeenCalled();
+  });
+
+  // The positive half. Without it, deleting the whole effect would still leave
+  // the guest test green -- "never pushes" is trivially satisfied by never
+  // pushing at all.
+  test('pushes when the tab is hidden for a signed-in player', async () => {
+    auth.getUser.mockResolvedValue({ id: 'u1', email: 'a@b.com' });
+    render(<App />);
+    // Waiting for the absence of the Sign in button would pass against the
+    // pre-check stub, which has no button either -- wait for the signed-in
+    // rail instead, which only appears once user state has actually landed.
+    await screen.findByText('a@b.com');
+    hideTab();
+    await waitFor(() => expect(sync.push).toHaveBeenCalled());
   });
 });
 
