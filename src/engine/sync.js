@@ -174,13 +174,26 @@ export async function pull(presetUser) {
   return { games: mergedGames, hands: mergedHands, error: null };
 }
 
-/* Pull before push, so anything this browser has never seen is folded in
-   before its own state is sent back up as the record of what exists. */
+/* Push before pull. Hands are immutable and deduped both ways (the server
+   upserts with ignoreDuplicates, mergeHands keeps whatever id is already
+   local), so sending what is here up first cannot lose anything. Pulling
+   first used to be the actual bug: mergeHands appends the remote rows, sorts
+   everyone by startedAt, and trims to MAX_HANDS by shifting off the oldest of
+   the *combined* set -- which, right after a pull and before the push on the
+   next line, can include hands that exist only on this device and have never
+   reached the server. Push-then-pull is the standard offline-first order for
+   exactly this reason: publish what only you have before you fold in what
+   only the server has.
+
+   A failed push does not skip the pull: a pull cannot damage the server, and
+   there is no reason to also withhold whatever the cloud has just because the
+   upload side hit a network error. The push error is still the one reported
+   back, since it is the one that means something local may not be backed up
+   yet -- a pull failing after a successful push is comparatively harmless. */
 export async function syncNow() {
   const { user, error } = await requireUser();
   if (error) return { pushed: null, pulled: null, error: error };
-  const pulled = await pull(user);
-  if (pulled.error) return { pushed: null, pulled: pulled, error: pulled.error };
   const pushed = await push(user);
-  return { pushed: pushed, pulled: pulled, error: pushed.error };
+  const pulled = await pull(user);
+  return { pushed: pushed, pulled: pulled, error: pushed.error || pulled.error };
 }

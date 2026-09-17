@@ -184,4 +184,39 @@ describe('syncNow', () => {
     expect(res.error).toBeNull();
     expect(auth.getUser).toHaveBeenCalledTimes(1);
   });
+
+  // The whole point of Critical 2: pushing what only exists locally has to
+  // happen before pulling folds remote rows in and mergeHands trims the
+  // combined set -- otherwise a hand that has never reached the server can be
+  // the one that gets shifted off as "oldest".
+  test('pushes before it pulls', async () => {
+    localStorage.setItem('chipaway.hands.v1', JSON.stringify([HAND]));
+    const order = [];
+    upsert.mockImplementation(() => { order.push('push'); return Promise.resolve({ error: null }); });
+    select.mockImplementation(() => { order.push('pull'); return Promise.resolve({ data: [], error: null }); });
+    const auth = await import('./auth.js');
+    auth.getUser.mockResolvedValue({ id: 'user-1' });
+
+    await sync.syncNow();
+
+    expect(order[0]).toBe('push');
+    expect(order).toContain('pull');
+  });
+
+  // A push failure (network down, RLS rejection, whatever) must not also
+  // withhold the pull -- a pull cannot damage the server, so there is no
+  // reason to skip it just because the upload side failed.
+  test('still pulls when the push fails, and surfaces the push error', async () => {
+    localStorage.setItem('chipaway.hands.v1', JSON.stringify([HAND]));
+    upsert.mockResolvedValue({ error: { message: 'push failed' } });
+    select.mockResolvedValue({ data: [], error: null });
+    const auth = await import('./auth.js');
+    auth.getUser.mockResolvedValue({ id: 'user-1' });
+
+    const res = await sync.syncNow();
+
+    expect(select).toHaveBeenCalled();
+    expect(res.error).toBe('push failed');
+    expect(res.pulled.error).toBeNull();
+  });
 });
