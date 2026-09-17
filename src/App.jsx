@@ -9,7 +9,7 @@ import { SidePanel } from './components/SidePanel';
 import { SettingsModal } from './components/SettingsModal';
 import { HomeScreen } from './components/HomeScreen';
 import { HistoryPanel } from './components/HistoryPanel';
-import { endGuest, getUser, isGuest, onAuthChange, signOut } from './engine/auth';
+import { endGuest, getDisplayName, getUser, isGuest, onAuthChange, signOut } from './engine/auth';
 import { push, syncNow } from './engine/sync';
 import { SignInScreen } from './components/SignInScreen';
 
@@ -87,6 +87,11 @@ export function App() {
   const [authState, setAuthState] = useState('checking');
   const [user, setUser] = useState(null);
   const [guest, setGuest] = useState(() => isGuest());
+  // Starts null and upgrades once getDisplayName() resolves -- see the effect
+  // below, keyed on userId. Never gates render: the rail shows user.email
+  // immediately and swaps in the name when it arrives, rather than the rail
+  // being blank or the shell waiting on a second network round trip.
+  const [displayName, setDisplayName] = useState(null);
 
   // Read once, at first render, because takeScreenIntent consumes the intent —
   // it is for the reload that just happened, not for every render after it.
@@ -197,6 +202,19 @@ export function App() {
   // 60 seconds of the push cadence for no reason, since the id (and therefore
   // whether a background push should be running at all) has not changed.
   const userId = user ? user.id : null;
+
+  // A guest has no profile row -- guarded by userId, same as the push
+  // interval below, so this never fires for one. No reset-to-null on change
+  // is needed: every path that swaps one real account for another (sign-out,
+  // a lost session) already goes through location.reload() elsewhere in this
+  // file, so userId only ever moves from null to a real id once per page
+  // load, and displayName's initial state is already null for that gap.
+  useEffect(() => {
+    if (!userId) return undefined;
+    let cancelled = false;
+    getDisplayName().then((name) => { if (!cancelled) setDisplayName(name); });
+    return () => { cancelled = true; };
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) return undefined;
@@ -329,7 +347,7 @@ export function App() {
 
   return (
     <div className="shell" data-screen={screen}>
-      <AppRail screen={screen} onNavigate={navigate} user={user} onSignOut={doSignOut} onLeaveGuest={leaveGuest} />
+      <AppRail screen={screen} onNavigate={navigate} user={user} displayName={displayName} onSignOut={doSignOut} onLeaveGuest={leaveGuest} />
 
       <HomeScreen
         games={games}

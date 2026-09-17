@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('./engine/auth.js', () => ({
   getUser: vi.fn(),
+  getDisplayName: vi.fn(async () => null),
   isGuest: vi.fn(() => false),
   onAuthChange: vi.fn(() => () => {}),
   signOut: vi.fn(async () => ({ error: null })),
@@ -36,6 +37,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   auth.isGuest.mockReturnValue(false);
+  // clearAllMocks() resets call history but not a mockReturnValue/
+  // mockImplementation set by an individual test -- without resetting this
+  // here too, the pending-promise mock the "upgrades to the display name"
+  // test below installs would otherwise leak into every test that runs
+  // after it and never explicitly sets its own.
+  auth.getDisplayName.mockResolvedValue(null);
 });
 
 describe('auth gate', () => {
@@ -77,6 +84,28 @@ describe('auth gate', () => {
     auth.getUser.mockResolvedValue({ id: 'u1', email: 'matty@example.com' });
     render(<App />);
     expect(await screen.findByText('matty@example.com')).toBeInTheDocument();
+  });
+
+  test('shows the email immediately, then upgrades to the display name once it loads', async () => {
+    let resolveName;
+    auth.getUser.mockResolvedValue({ id: 'u1', email: 'matty@example.com' });
+    auth.getDisplayName.mockReturnValue(new Promise((resolve) => { resolveName = resolve; }));
+    render(<App />);
+
+    expect(await screen.findByText('matty@example.com')).toBeInTheDocument();
+
+    await act(async () => { resolveName('Matty'); });
+
+    expect(screen.getByText('Matty')).toBeInTheDocument();
+    expect(screen.queryByText('matty@example.com')).not.toBeInTheDocument();
+  });
+
+  test('does not fetch a display name for a guest', async () => {
+    auth.getUser.mockResolvedValue(null);
+    auth.isGuest.mockReturnValue(true);
+    render(<App />);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull());
+    expect(auth.getDisplayName).not.toHaveBeenCalled();
   });
 
   // jsdom reports visibilityState 'visible' and will not change it, so a bare
